@@ -1,0 +1,2001 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Novel Memory - 小说历史记忆工作台</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --text-light: #94a3b8;
+      --border: #e2e8f0;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --success: #16a34a;
+      --success-light: #dcfce7;
+      --danger: #dc2626;
+      --danger-light: #fee2e2;
+      --sidebar-bg: #0f172a;
+      --sidebar-text: #e2e8f0;
+      --sidebar-hover: #1e293b;
+      --sidebar-active: #334155;
+      --radius: 8px;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--sidebar-bg);
+      color: var(--sidebar-text);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1e293b;
+    }
+    .brand {
+      padding: 24px 20px 18px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .brand h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand p {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .sidebar-section {
+      padding: 20px 16px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .btn-xs-icon {
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-xs-icon:hover { background: #334155; color: #fff; }
+    .novel-list {
+      padding: 0 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .novel-item {
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      background: transparent;
+      border: 1px solid transparent;
+      text-align: left;
+      color: #cbd5e1;
+      transition: all 0.15s ease;
+    }
+    .novel-item:hover { background: var(--sidebar-hover); color: #fff; }
+    .novel-item.active {
+      background: var(--sidebar-active);
+      color: #fff;
+      border-color: #3b82f6;
+      box-shadow: inset 3px 0 0 #3b82f6;
+    }
+    .novel-name {
+      font-weight: 600;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .novel-badge {
+      font-size: 11px;
+      background: #1e293b;
+      color: #94a3b8;
+      padding: 2px 7px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    .novel-item.active .novel-badge {
+      background: #2563eb;
+      color: #fff;
+    }
+    .novel-desc {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sidebar-footer {
+      padding: 16px;
+      border-top: 1px solid #1e293b;
+      font-size: 12px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .btn-token {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      text-decoration: underline;
+      font-size: 11px;
+    }
+    .btn-token:hover { color: #fff; }
+
+    /* Main Area */
+    .main {
+      padding: 28px 36px;
+      overflow-y: auto;
+      max-width: 1400px;
+    }
+
+    /* Mount Status Bar */
+    .mount-bar {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 22px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: var(--shadow-sm);
+    }
+    .mount-info {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .mount-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--success-light);
+      color: var(--success);
+    }
+    .mount-details {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .mount-details strong {
+      color: var(--text);
+    }
+    .mount-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Library Header */
+    .novel-header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .novel-title-group h2 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-edit-novel {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .btn-edit-novel:hover { background: #f1f5f9; color: var(--text); }
+    .novel-title-group p {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .search-box {
+      flex: 1;
+      max-width: 460px;
+      position: relative;
+    }
+    .search-box input {
+      width: 100%;
+      padding: 10px 14px 10px 36px;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-box input:focus { border-color: var(--primary); }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-light);
+      pointer-events: none;
+    }
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .stage-counter {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #f8fafc; }
+    .btn.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+    .btn.primary:hover { background: var(--primary-hover); }
+    .btn.success {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+    .btn.success:hover { background: #15803d; }
+    .btn.danger-outline {
+      border-color: #fca5a5;
+      color: var(--danger);
+      background: #fff;
+    }
+    .btn.danger-outline:hover { background: var(--danger-light); }
+
+    /* Memory Cards Grid */
+    .stage-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .stage-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      align-items: flex-start;
+      gap: 16px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .stage-card:hover {
+      border-color: #cbd5e1;
+      box-shadow: var(--shadow);
+    }
+    .stage-card.mounted {
+      border-left: 4px solid var(--primary);
+    }
+    .mount-check-wrap {
+      padding-top: 4px;
+    }
+    .mount-check {
+      width: 19px;
+      height: 19px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .stage-main {
+      min-width: 0;
+    }
+    .stage-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .stage-date {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      background: var(--primary-light);
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .stage-words {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+    .mount-tag {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .mount-tag.yes { background: var(--success-light); color: var(--success); }
+    .mount-tag.no { background: #f1f5f9; color: var(--text-light); }
+    .stage-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+    .stage-preview {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 10px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .stage-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag-pill {
+      font-size: 11px;
+      background: #f1f5f9;
+      color: #475569;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .tag-pill:hover { background: #e2e8f0; color: #1e293b; }
+    .stage-ops {
+      display: flex;
+      gap: 8px;
+      padding-top: 2px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      background: #fff;
+      border-radius: var(--radius);
+      border: 1px dashed var(--border);
+      color: var(--text-muted);
+    }
+    .empty-state h3 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
+
+    /* Drawer / Modal Components */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(2px);
+      z-index: 50;
+      display: none;
+    }
+    .drawer-overlay.open { display: block; }
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(720px, 92vw);
+      background: #fff;
+      box-shadow: -10px 0 25px -5px rgba(0, 0, 0, 0.15);
+      z-index: 51;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fff;
+    }
+    .drawer-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .drawer-body {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .drawer-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      background: #f8fafc;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    /* Reader Typography */
+    .reader-meta-box {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 20px;
+    }
+    .reader-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .reader-tab {
+      background: none;
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+    .reader-tab.active {
+      color: var(--primary);
+      background: var(--primary-light);
+    }
+    .markdown-view {
+      font-size: 15px;
+      line-height: 1.8;
+      color: #334155;
+    }
+    .markdown-view h1, .markdown-view h2, .markdown-view h3 {
+      color: var(--text);
+      margin: 20px 0 10px;
+      line-height: 1.3;
+    }
+    .markdown-view p { margin-bottom: 14px; }
+    .markdown-view ul, .markdown-view ol { margin: 10px 0 14px 24px; }
+    .markdown-view blockquote {
+      border-left: 4px solid #cbd5e1;
+      padding: 8px 14px;
+      margin: 14px 0;
+      color: #475569;
+      background: #f8fafc;
+      border-radius: 0 4px 4px 0;
+    }
+    .raw-view {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      background: #f8fafc;
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* Forms */
+    .form-group {
+      margin-bottom: 18px;
+    }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .form-input, .form-textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+      background: #fff;
+    }
+    .form-input:focus, .form-textarea:focus { border-color: var(--primary); }
+    .form-textarea {
+      font-family: inherit;
+      resize: vertical;
+      min-height: 280px;
+      line-height: 1.6;
+    }
+    .form-help {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Modal */
+    .modal-box {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(520px, 90vw);
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      z-index: 60;
+      display: none;
+      flex-direction: column;
+    }
+    .modal-box.open { display: flex; }
+    .modal-head {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-body { padding: 20px; }
+    .modal-foot {
+      padding: 14px 20px;
+      background: #f8fafc;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      border-radius: 0 0 var(--radius) var(--radius);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      right: 28px;
+      bottom: 28px;
+      background: #1e293b;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: var(--shadow-lg);
+      display: none;
+      z-index: 100;
+    }
+    /* Drag and Drop Overlay */
+    .drag-drop-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(4px);
+      z-index: 999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .drag-drop-overlay.active { display: flex; }
+    .drag-drop-card {
+      background: #fff;
+      border: 3px dashed var(--primary);
+      border-radius: 16px;
+      padding: 42px 56px;
+      text-align: center;
+      color: var(--text);
+      box-shadow: var(--shadow-lg);
+      max-width: 500px;
+    }
+    .drag-drop-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; color: var(--primary); }
+    .drag-drop-card p { font-size: 14px; color: var(--text-muted); }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid #1e293b; }
+      .main { padding: 20px 16px; }
+      .mount-bar { flex-direction: column; align-items: flex-start; gap: 14px; }
+    }
+
+    @media (max-width: 768px) {
+      .main {
+        padding: 14px 12px 48px;
+      }
+      .brand {
+        padding: 12px 14px 6px;
+      }
+      .brand h1 {
+        font-size: 16px;
+      }
+      .brand p {
+        font-size: 11px;
+      }
+      .sidebar-section {
+        padding: 6px 14px 4px;
+      }
+      .novel-list {
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 4px 14px 10px;
+        gap: 8px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .novel-item {
+        flex: 0 0 auto;
+        min-width: 130px;
+        max-width: 200px;
+        padding: 8px 12px;
+      }
+      .novel-desc {
+        display: none;
+      }
+      .sidebar-footer {
+        padding: 8px 14px;
+        font-size: 11px;
+      }
+
+      /* Mount Status Bar */
+      .mount-bar {
+        padding: 12px 14px;
+        gap: 12px;
+      }
+      .mount-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        width: 100%;
+      }
+      .mount-details {
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .mount-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        width: 100%;
+      }
+      .mount-actions .btn {
+        justify-content: center;
+        font-size: 12px;
+        padding: 8px 4px;
+        white-space: nowrap;
+      }
+      .mount-actions #btnSaveMount {
+        grid-column: 1 / -1;
+        padding: 9px 8px;
+        font-size: 13px;
+      }
+
+      /* Novel Header */
+      .novel-header {
+        margin-bottom: 16px;
+      }
+      .novel-title-group h2 {
+        font-size: 18px;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .btn-edit-novel {
+        font-size: 11px;
+        padding: 2px 7px;
+      }
+      .novel-title-group p {
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 4px;
+      }
+
+      /* Toolbar */
+      .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .search-box {
+        width: 100%;
+        max-width: 100%;
+      }
+      .search-box input {
+        font-size: 14px;
+        padding: 9px 12px 9px 34px;
+      }
+      .toolbar-right {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        width: 100%;
+        align-items: center;
+      }
+      .stage-counter {
+        grid-column: 1 / -1;
+        font-size: 12px;
+      }
+      .toolbar-right .btn {
+        justify-content: center;
+        font-size: 12px;
+        padding: 8px 6px;
+        white-space: nowrap;
+        width: 100%;
+      }
+
+      /* Stage Card */
+      .stage-card {
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        gap: 8px 10px;
+        padding: 14px 12px;
+      }
+      .mount-check-wrap {
+        padding-top: 2px;
+      }
+      .mount-check {
+        width: 18px;
+        height: 18px;
+      }
+      .stage-main {
+        min-width: 0;
+      }
+      .stage-meta {
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .stage-date {
+        font-size: 11px;
+        padding: 2px 6px;
+      }
+      .stage-words {
+        font-size: 11px;
+      }
+      .mount-tag {
+        font-size: 10px;
+        padding: 1px 5px;
+      }
+      .stage-title {
+        font-size: 15px;
+        margin-bottom: 6px;
+        word-break: break-word;
+      }
+      .stage-preview {
+        font-size: 12px;
+        line-height: 1.5;
+        margin-bottom: 8px;
+        word-break: break-word;
+      }
+      .stage-ops {
+        grid-column: 1 / -1;
+        display: flex;
+        gap: 6px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--border);
+        width: 100%;
+      }
+      .stage-ops .btn {
+        flex: 1;
+        justify-content: center;
+        font-size: 12px;
+        padding: 8px 4px;
+        white-space: nowrap;
+      }
+      .stage-ops .btn-delete {
+        flex: 0 0 40px;
+        padding: 8px 0;
+      }
+
+      /* Drawers and Modals */
+      .drawer {
+        width: 100vw;
+        max-width: 100vw;
+      }
+      .drawer-header {
+        padding: 14px 16px;
+      }
+      .drawer-title {
+        font-size: 15px;
+        max-width: calc(100vw - 190px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .drawer-header .btn {
+        white-space: nowrap;
+        font-size: 12px;
+        padding: 5px 8px;
+      }
+      #boxFormImport {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+      }
+      #boxFormImport .btn {
+        justify-content: center;
+        width: 100%;
+      }
+      #btnAutoId, #btnAutoNovelId {
+        white-space: nowrap;
+        font-size: 12px;
+        padding: 8px 10px;
+      }
+      .drawer-body {
+        padding: 16px;
+      }
+      .drawer-footer {
+        padding: 12px 16px;
+        gap: 8px;
+      }
+      .drawer-footer .btn {
+        flex: 1;
+        justify-content: center;
+      }
+      .modal-box {
+        width: calc(100vw - 28px) !important;
+        max-width: calc(100vw - 28px) !important;
+      }
+      .modal-head {
+        padding: 14px 16px;
+        font-size: 15px;
+      }
+      .modal-body {
+        padding: 14px 16px;
+      }
+      .modal-foot {
+        padding: 12px 16px;
+      }
+      .modal-foot .btn {
+        flex: 1;
+        justify-content: center;
+      }
+      .toast {
+        left: 16px;
+        right: 16px;
+        bottom: 16px;
+        text-align: center;
+      }
+      .drag-drop-card {
+        padding: 28px 20px;
+        margin: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>📖 Novel Memory</h1>
+        <p>小说历史记忆工作台 & AI 挂载控制台</p>
+      </div>
+
+      <div class="sidebar-section">
+        <span class="section-title">我的小说 / 世界观</span>
+        <button class="btn-xs-icon" id="btnNewNovel">+ 新建小说</button>
+      </div>
+
+      <nav class="novel-list" id="novelList"></nav>
+
+      <div class="sidebar-footer">
+        <span>MCP 状态: 正常</span>
+        <button class="btn-token" id="btnSetToken">设置 Token</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Mount Status Bar -->
+      <section class="mount-bar">
+        <div class="mount-info">
+          <div class="mount-badge" id="mountBadge">
+            <span>●</span> 当前挂载中
+          </div>
+          <div class="mount-details">
+            小说: <strong id="mountNovelName">加载中...</strong> |
+            已挂载 <strong id="mountCount">0</strong> / <span id="mountTotal">0</span> 个阶段
+          </div>
+        </div>
+        <div class="mount-actions">
+          <button class="btn" id="btnSelectAll">全选本书</button>
+          <button class="btn" id="btnClearAll">全部清空</button>
+          <button class="btn primary" id="btnSaveMount">💾 保存挂载给 AI</button>
+        </div>
+      </section>
+
+      <!-- Novel Info Header -->
+      <header class="novel-header">
+        <div class="novel-title-group">
+          <h2>
+            <span id="currentNovelTitle">加载中</span>
+            <button class="btn-edit-novel" id="btnEditNovel">✏️ 修改大纲简介</button>
+          </h2>
+          <p id="currentNovelDesc">加载小说描述中...</p>
+        </div>
+      </header>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="搜索人名、地名、事件或标签快速查找剧情...">
+        </div>
+        <div class="toolbar-right">
+          <span class="stage-counter" id="stageCounter">共 0 个阶段</span>
+          <button class="btn" id="btnUploadMd" title="支持批量选择并上传 .md 文件">📂 上传 .md 文件</button>
+          <input type="file" id="inputMdFiles" accept=".md,text/markdown" multiple style="display:none;">
+          <button class="btn success" id="btnNewStage">✍️ 记录新历史阶段</button>
+        </div>
+      </div>
+
+      <!-- Stage Cards -->
+      <div class="stage-list" id="stageList"></div>
+    </main>
+  </div>
+
+  <!-- Reader Drawer (查看剧情正文) -->
+  <div class="drawer-overlay" id="readerOverlay"></div>
+  <div class="drawer" id="readerDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title" id="readerTitle">阶段正文</div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="btnReaderToEdit">✏️ 转入编辑</button>
+        <button class="btn" id="btnReaderClose">✕ 关闭</button>
+      </div>
+    </div>
+    <div class="drawer-body">
+      <div class="reader-meta-box">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span class="stage-date" id="readerDate"></span>
+          <span class="stage-words" id="readerWords"></span>
+        </div>
+        <div class="stage-tags" id="readerTags"></div>
+      </div>
+
+      <div class="reader-tabs">
+        <button class="reader-tab active" id="tabFormatted">排版阅读</button>
+        <button class="reader-tab" id="tabRaw">原始 Markdown</button>
+      </div>
+
+      <div class="markdown-view" id="readerMarkdown"></div>
+      <pre class="raw-view" id="readerRaw" style="display:none;"></pre>
+    </div>
+  </div>
+
+  <!-- Editor Drawer (新增/编辑阶段) -->
+  <div class="drawer-overlay" id="editorOverlay"></div>
+  <div class="drawer" id="editorDrawer">
+    <div class="drawer-header">
+      <div class="drawer-title" id="editorDrawerTitle">记录新历史阶段</div>
+      <button class="btn" id="btnEditorClose">✕ 关闭</button>
+    </div>
+    <div class="drawer-body">
+      <div id="boxFormImport" style="background:#eff6ff; border:1px dashed #93c5fd; border-radius:var(--radius); padding:10px 14px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:12px; color:#1e40af;">💡 已有写好的文件？可直接导入填充表单</span>
+        <button type="button" class="btn" id="btnImportLocalToForm" style="font-size:12px; padding:4px 10px;">选择本地 .md 文件</button>
+        <input type="file" id="inputFormFile" accept=".md,text/markdown" style="display:none;">
+      </div>
+      <form id="stageForm">
+        <div class="form-group" id="groupMemoryId">
+          <label class="form-label">阶段标识 ID <span style="color:var(--text-light); font-weight:normal;">(只由字母数字下划线组成)</span></label>
+          <div style="display:flex; gap:8px;">
+            <input type="text" class="form-input" id="inputMemoryId" placeholder="例如: demo_stage_03">
+            <button type="button" class="btn" id="btnAutoId">自动推荐 ID</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">历史时间跨度</label>
+          <input type="text" class="form-input" id="inputDateRange" placeholder="例如: 故事第7天—第9天" required>
+          <div class="form-help">便于作者按时间梳理剧情脉络与年表。</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">阶段核心标题</label>
+          <input type="text" class="form-input" id="inputStageTitle" placeholder="例如: 队伍出发与首次合作" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">关键标签 (人物、地点、事件)</label>
+          <input type="text" class="form-input" id="inputStageTags" placeholder="用逗号隔开，例如: 角色甲, 河港, 修桥">
+          <div class="form-help">用于快速筛选检索，也可帮助 AI 精准命中。</div>
+        </div>
+
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <label class="form-label" style="margin:0;">阶段剧情正文 (Markdown)</label>
+            <span class="stage-words" id="editorWordCount">0 字</span>
+          </div>
+          <textarea class="form-textarea" id="inputStageContent" placeholder="在此记录本阶段的历史事实、剧情经过、核心对话与设定细节..." required></textarea>
+        </div>
+
+        <div class="form-group" id="groupAutoMount" style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="checkAutoMount" checked style="width:16px; height:16px; accent-color:var(--primary);">
+          <label for="checkAutoMount" style="font-size:13px; cursor:pointer;">保存后立即加入本书当前 AI 挂载范围</label>
+        </div>
+      </form>
+    </div>
+    <div class="drawer-footer">
+      <button class="btn" id="btnEditorCancel">取消</button>
+      <button class="btn primary" id="btnEditorSubmit">保存历史阶段</button>
+    </div>
+  </div>
+
+  <!-- Novel Modal (新建/编辑小说) -->
+  <div class="drawer-overlay" id="novelModalOverlay"></div>
+  <div class="modal-box" id="novelModal">
+    <div class="modal-head">
+      <span id="novelModalTitle">新建小说 / 世界观</span>
+      <button class="btn" id="btnNovelModalClose" style="padding:2px 8px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" id="groupNovelId">
+        <label class="form-label">小说唯一英文标识 ID <span style="color:var(--text-light); font-weight:normal;">(作为后台文件夹名，如 demo_story)</span></label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" class="form-input" id="inputNovelId" placeholder="例如: demo_story 或 cyber_city">
+          <button type="button" class="btn" id="btnAutoNovelId" style="white-space:nowrap; font-size:12px;">自动推荐</button>
+        </div>
+        <div class="form-help">用于在服务器上创建存放历史阶段的底层目录（仅限英文字母、数字和下划线）。</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">小说 / 世界观书名</label>
+        <input type="text" class="form-input" id="inputNovelName" placeholder="例如: 示例故事 或 星际远征" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">故事大纲与背景设定简介</label>
+        <textarea class="form-textarea" id="inputNovelDesc" style="min-height:110px;" placeholder="记录本书的主要主线、时代背景或核心冲突..."></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="btnNovelModalCancel">取消</button>
+      <button class="btn primary" id="btnNovelModalSubmit">确认保存</button>
+    </div>
+  </div>
+
+  <!-- Token & Password Management Modal -->
+  <div class="drawer-overlay" id="tokenModalOverlay"></div>
+  <div class="modal-box" id="tokenModal" style="width:480px;">
+    <div class="modal-head">
+      <span>🔐 登录凭证与修改密码</span>
+      <button class="btn" id="btnTokenModalClose" style="padding:2px 8px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Section 1: 修改密码 -->
+      <div style="background:#f8fafc; border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:18px;">
+        <h4 style="font-size:14px; font-weight:700; margin-bottom:6px; color:var(--text);">修改管理密码 (Token)</h4>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">修改后立即生效并保存，后续登录此工作台都需使用新密码。</p>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label" style="font-size:12px;">新管理密码 (至少 6 位)</label>
+          <input type="password" class="form-input" id="inputNewToken" placeholder="输入新的管理密码">
+        </div>
+        <button class="btn primary" id="btnChangePassword" style="width:100%; justify-content:center;">确认修改新密码</button>
+      </div>
+
+      <!-- Section 2: 本地凭证与退出 -->
+      <div>
+        <h4 style="font-size:14px; font-weight:700; margin-bottom:6px; color:var(--text);">当前设备登录凭证</h4>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label" style="font-size:12px;">当前已保存的 Token</label>
+          <input type="text" class="form-input" id="inputCurrentToken" placeholder="输入或粘贴已有 Token">
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn" id="btnSaveLocalToken" style="flex:1; justify-content:center;">保存并切换凭证</button>
+          <button class="btn danger-outline" id="btnLogout" style="flex:1; justify-content:center;">退出登录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div class="drawer-overlay" id="deleteModalOverlay"></div>
+  <div class="modal-box" id="deleteModal" style="width:420px;">
+    <div class="modal-head">
+      <span>确认删除历史阶段</span>
+      <button class="btn" id="btnDeleteModalClose" style="padding:2px 8px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px; line-height:1.6; color:var(--text);" id="deleteConfirmText">确认删除此阶段吗？此操作将移除该 Markdown 文件。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="btnDeleteCancel">取消</button>
+      <button class="btn danger-outline" id="btnDeleteSubmit">确认删除</button>
+    </div>
+  </div>
+
+  <!-- Drag and Drop Overlay -->
+  <div class="drag-drop-overlay" id="dragDropOverlay">
+    <div class="drag-drop-card">
+      <div style="font-size:48px; margin-bottom:12px;">📥</div>
+      <h3>松开鼠标立即导入</h3>
+      <p>正在将选中的 .md 文件导入至当前小说记忆库</p>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // State
+    let libs = [];
+    let activeLibIndex = 0;
+    let activeScope = { library_id: '', memory_ids: [] };
+    let selectedMountIds = new Set();
+    let currentReadingMemory = null;
+    let editingMemoryId = null;
+    let deletingMemoryId = null;
+    let novelModalMode = 'create'; // 'create' | 'edit'
+
+    const $ = id => document.getElementById(id);
+
+    // Token & API fetcher
+    function getToken() {
+      return sessionStorage.novelMemoryToken || '';
+    }
+
+    async function apiFetch(path, options = {}) {
+      const token = getToken();
+      options.headers = options.headers || {};
+      if (token) {
+        options.headers['Authorization'] = 'Bearer ' + token;
+      }
+      if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(options.body);
+      }
+      const res = await fetch(path, options);
+      if (res.status === 401) {
+        sessionStorage.removeItem('novelMemoryToken');
+        window.location.href = '/';
+      }
+      return res;
+    }
+
+    function showToast(msg) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2400);
+    }
+
+    // Lightweight Markdown Renderer (Offline friendly, zero dependency)
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderMarkdown(md) {
+      if (!md) return '';
+      const lines = md.split(/\r?\n/);
+      let html = '';
+      let inList = false;
+      let inBlockquote = false;
+
+      for (let line of lines) {
+        let trimmed = line.trim();
+
+        if (!trimmed) {
+          if (inList) { html += '</ul>\n'; inList = false; }
+          if (inBlockquote) { html += '</blockquote>\n'; inBlockquote = false; }
+          continue;
+        }
+
+        // Headings
+        if (/^######\s+(.*)/.test(trimmed)) { html += `<h6>${escapeHtml(RegExp.$1)}</h6>`; continue; }
+        if (/^#####\s+(.*)/.test(trimmed)) { html += `<h5>${escapeHtml(RegExp.$1)}</h5>`; continue; }
+        if (/^####\s+(.*)/.test(trimmed)) { html += `<h4>${escapeHtml(RegExp.$1)}</h4>`; continue; }
+        if (/^###\s+(.*)/.test(trimmed)) { html += `<h3>${escapeHtml(RegExp.$1)}</h3>`; continue; }
+        if (/^##\s+(.*)/.test(trimmed)) { html += `<h2>${escapeHtml(RegExp.$1)}</h2>`; continue; }
+        if (/^#\s+(.*)/.test(trimmed)) { html += `<h1>${escapeHtml(RegExp.$1)}</h1>`; continue; }
+
+        // Blockquotes
+        if (/^>\s*(.*)/.test(trimmed)) {
+          if (!inBlockquote) { html += '<blockquote>'; inBlockquote = true; }
+          html += `<p>${formatInline(RegExp.$1)}</p>`;
+          continue;
+        } else if (inBlockquote) {
+          html += '</blockquote>\n';
+          inBlockquote = false;
+        }
+
+        // Lists
+        if (/^[-*+]\s+(.*)/.test(trimmed)) {
+          if (!inList) { html += '<ul>'; inList = true; }
+          html += `<li>${formatInline(RegExp.$1)}</li>`;
+          continue;
+        } else if (inList) {
+          html += '</ul>\n';
+          inList = false;
+        }
+
+        // Paragraph
+        html += `<p>${formatInline(trimmed)}</p>\n`;
+      }
+
+      if (inList) html += '</ul>\n';
+      if (inBlockquote) html += '</blockquote>\n';
+      return html;
+    }
+
+    function formatInline(text) {
+      let escaped = escapeHtml(text);
+      // Bold
+      escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      // Italic
+      escaped = escaped.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      // Code
+      escaped = escaped.replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:2px 5px;border-radius:3px;">$1</code>');
+      return escaped;
+    }
+
+    // Render Data
+    function render() {
+      const currentLib = libs[activeLibIndex];
+      if (!currentLib) {
+        $('currentNovelTitle').textContent = '未找到小说';
+        $('currentNovelDesc').textContent = '请先新建一本小说。';
+        $('novelList').innerHTML = '';
+        $('stageList').innerHTML = '<div class="empty-state"><h3>暂无小说</h3><p>点击左侧“+ 新建小说”开始创建您的第一个小说记忆库。</p></div>';
+        return;
+      }
+
+      // Sidebar list
+      $('novelList').innerHTML = libs.map((l, i) => {
+        const isCurrentActive = i === activeLibIndex;
+        const count = (l.memories || []).length;
+        return `
+          <div class="novel-item ${isCurrentActive ? 'active' : ''}" data-index="${i}">
+            <div class="novel-name">
+              <span>${escapeHtml(l.name)}</span>
+              <span class="novel-badge">${count} 阶段</span>
+            </div>
+            <div class="novel-desc">${escapeHtml(l.description || '暂无描述')}</div>
+          </div>
+        `;
+      }).join('');
+
+      // Header
+      $('currentNovelTitle').textContent = currentLib.name;
+      $('currentNovelDesc').textContent = currentLib.description || '暂未添加大纲与背景设定简介。';
+
+      // Mount status
+      const totalStages = (currentLib.memories || []).length;
+      const isThisLibMounted = activeScope.library_id === currentLib.library_id;
+      const currentMountedCount = isThisLibMounted ? selectedMountIds.size : 0;
+
+      $('mountNovelName').textContent = currentLib.name;
+      $('mountCount').textContent = currentMountedCount;
+      $('mountTotal').textContent = totalStages;
+
+      if (isThisLibMounted) {
+        $('mountBadge').innerHTML = '<span>●</span> 本书正在挂载中';
+        $('mountBadge').style.background = 'var(--success-light)';
+        $('mountBadge').style.color = 'var(--success)';
+      } else {
+        $('mountBadge').innerHTML = '<span>○</span> 未挂载此书 (AI 无法读取)';
+        $('mountBadge').style.background = '#f1f5f9';
+        $('mountBadge').style.color = 'var(--text-muted)';
+      }
+
+      // Filter stages
+      const query = $('searchInput').value.trim().toLowerCase();
+      let stages = currentLib.memories || [];
+      if (query) {
+        stages = stages.filter(s => {
+          return (s.title && s.title.toLowerCase().includes(query)) ||
+                 (s.date_range && s.date_range.toLowerCase().includes(query)) ||
+                 (s.tags && s.tags.some(t => t.toLowerCase().includes(query))) ||
+                 (s.content_preview && s.content_preview.toLowerCase().includes(query));
+        });
+      }
+
+      $('stageCounter').textContent = `显示 ${stages.length} / ${totalStages} 个阶段`;
+
+      if (!stages.length) {
+        $('stageList').innerHTML = `
+          <div class="empty-state">
+            <h3>${query ? '未找到匹配的阶段' : '本书尚未记录任何历史阶段'}</h3>
+            <p>${query ? '尝试搜索其他关键词或人名' : '点击右上角“✍️ 记录新历史阶段”开始梳理过往剧情。'}</p>
+          </div>
+        `;
+        return;
+      }
+
+      $('stageList').innerHTML = stages.map(s => {
+        const isMounted = selectedMountIds.has(s.memory_id);
+        const tagsHtml = (s.tags || []).map(t => `<span class="tag-pill" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('');
+        const words = s.content_length ? `约 ${s.content_length} 字` : '';
+
+        return `
+          <article class="stage-card ${isMounted ? 'mounted' : ''}" data-id="${s.memory_id}">
+            <div class="mount-check-wrap">
+              <input type="checkbox" class="mount-check" title="挂载给 AI 读取" value="${s.memory_id}" ${isMounted ? 'checked' : ''}>
+            </div>
+            <div class="stage-main">
+              <div class="stage-meta">
+                <span class="stage-date">${escapeHtml(s.date_range)}</span>
+                <span class="stage-words">${words}</span>
+                <span class="mount-tag ${isMounted ? 'yes' : 'no'}">${isMounted ? '已挂载' : '未挂载'}</span>
+              </div>
+              <h3 class="stage-title">${escapeHtml(s.title)}</h3>
+              <p class="stage-preview">${escapeHtml(s.content_preview || '暂无正文预览')}</p>
+              <div class="stage-tags">${tagsHtml}</div>
+            </div>
+            <div class="stage-ops">
+              <button class="btn btn-view" data-id="${s.memory_id}">👀 查看正文</button>
+              <button class="btn btn-edit" data-id="${s.memory_id}">✏️ 编辑</button>
+              <button class="btn danger-outline btn-delete" data-id="${s.memory_id}" data-title="${escapeHtml(s.title)}">🗑️</button>
+            </div>
+          </article>
+        `;
+      }).join('');
+    }
+
+    // Load initial data
+    async function loadData() {
+      try {
+        const resLibs = await apiFetch('/api/libraries');
+        if (!resLibs.ok) throw new Error('Failed to load libraries');
+        libs = await resLibs.json();
+
+        const resScope = await apiFetch('/api/scope');
+        if (resScope.ok) {
+          activeScope = await resScope.json();
+          if (activeScope.library_id) {
+            const idx = libs.findIndex(l => l.library_id === activeScope.library_id);
+            if (idx >= 0) activeLibIndex = idx;
+            selectedMountIds = new Set(activeScope.memory_ids || []);
+          }
+        }
+        render();
+      } catch (err) {
+        console.error(err);
+        showToast('加载失败，请检查 Token 或后端服务状态');
+      }
+    }
+
+    // Sidebar Click
+    $('novelList').onclick = e => {
+      const item = e.target.closest('.novel-item');
+      if (item) {
+        activeLibIndex = parseInt(item.dataset.index, 10);
+        const currentLib = libs[activeLibIndex];
+        if (activeScope.library_id === currentLib.library_id) {
+          selectedMountIds = new Set(activeScope.memory_ids || []);
+        } else {
+          // If switching to another novel, default select its existing scope or all
+          selectedMountIds.clear();
+        }
+        render();
+      }
+    };
+
+    // Mount Checkbox Toggle
+    $('stageList').onchange = e => {
+      if (e.target.matches('.mount-check')) {
+        const id = e.target.value;
+        if (e.target.checked) {
+          selectedMountIds.add(id);
+        } else {
+          selectedMountIds.delete(id);
+        }
+        render();
+      }
+    };
+
+    // Mount Actions
+    $('btnSelectAll').onclick = () => {
+      const currentLib = libs[activeLibIndex];
+      if (!currentLib) return;
+      (currentLib.memories || []).forEach(m => selectedMountIds.add(m.memory_id));
+      render();
+    };
+
+    $('btnClearAll').onclick = () => {
+      selectedMountIds.clear();
+      render();
+    };
+
+    $('btnSaveMount').onclick = async () => {
+      const currentLib = libs[activeLibIndex];
+      if (!currentLib) return;
+      try {
+        const res = await apiFetch('/api/scope', {
+          method: 'POST',
+          body: {
+            library_id: currentLib.library_id,
+            memory_ids: Array.from(selectedMountIds),
+          }
+        });
+        if (!res.ok) throw new Error();
+        activeScope = await res.json();
+        showToast(`挂载成功！已向 AI 开放 ${selectedMountIds.size} 个阶段`);
+        render();
+      } catch (err) {
+        showToast('保存挂载失败，请检查后端网络');
+      }
+    };
+
+    // Search filter & tag click
+    $('searchInput').oninput = () => render();
+
+    $('stageList').onclick = async e => {
+      // Tag click to filter
+      const tagPill = e.target.closest('.tag-pill');
+      if (tagPill) {
+        $('searchInput').value = tagPill.dataset.tag;
+        render();
+        return;
+      }
+
+      // View content
+      const btnView = e.target.closest('.btn-view');
+      if (btnView) {
+        const memoryId = btnView.dataset.id;
+        await openReader(memoryId);
+        return;
+      }
+
+      // Edit content
+      const btnEdit = e.target.closest('.btn-edit');
+      if (btnEdit) {
+        const memoryId = btnEdit.dataset.id;
+        await openEditor('edit', memoryId);
+        return;
+      }
+
+      // Delete content
+      const btnDelete = e.target.closest('.btn-delete');
+      if (btnDelete) {
+        deletingMemoryId = btnDelete.dataset.id;
+        $('deleteConfirmText').textContent = `确认删除历史阶段【${btnDelete.dataset.title}】吗？删除后将直接移除对应文件。`;
+        openModal('deleteModal');
+        return;
+      }
+    };
+
+    // Reader Drawer Handlers
+    async function openReader(memoryId) {
+      const currentLib = libs[activeLibIndex];
+      try {
+        const res = await apiFetch(`/api/libraries/${currentLib.library_id}/memories/${memoryId}`);
+        if (!res.ok) throw new Error();
+        currentReadingMemory = await res.json();
+
+        $('readerTitle').textContent = currentReadingMemory.title;
+        $('readerDate').textContent = currentReadingMemory.date_range;
+        $('readerWords').textContent = `正文字数: ${currentReadingMemory.content.length} 字`;
+        $('readerTags').innerHTML = (currentReadingMemory.tags || []).map(t => `<span class="tag-pill">${escapeHtml(t)}</span>`).join('');
+        $('readerMarkdown').innerHTML = renderMarkdown(currentReadingMemory.content);
+        $('readerRaw').textContent = `---\nid: ${currentReadingMemory.memory_id}\ndate_range: ${currentReadingMemory.date_range}\ntitle: ${currentReadingMemory.title}\ntags: ${currentReadingMemory.raw_tags}\n---\n\n${currentReadingMemory.content}`;
+
+        // Default tab: formatted
+        $('tabFormatted').classList.add('active');
+        $('tabRaw').classList.remove('active');
+        $('readerMarkdown').style.display = 'block';
+        $('readerRaw').style.display = 'none';
+
+        $('readerOverlay').classList.add('open');
+        $('readerDrawer').classList.add('open');
+      } catch (err) {
+        showToast('读取正文失败');
+      }
+    }
+
+    function closeReader() {
+      $('readerOverlay').classList.remove('open');
+      $('readerDrawer').classList.remove('open');
+      currentReadingMemory = null;
+    }
+
+    $('btnReaderClose').onclick = closeReader;
+    $('readerOverlay').onclick = closeReader;
+
+    $('tabFormatted').onclick = () => {
+      $('tabFormatted').classList.add('active');
+      $('tabRaw').classList.remove('active');
+      $('readerMarkdown').style.display = 'block';
+      $('readerRaw').style.display = 'none';
+    };
+
+    $('tabRaw').onclick = () => {
+      $('tabRaw').classList.add('active');
+      $('tabFormatted').classList.remove('active');
+      $('readerMarkdown').style.display = 'none';
+      $('readerRaw').style.display = 'block';
+    };
+
+    $('btnReaderToEdit').onclick = () => {
+      if (currentReadingMemory) {
+        const id = currentReadingMemory.memory_id;
+        closeReader();
+        openEditor('edit', id);
+      }
+    };
+
+    // Editor Drawer Handlers (New / Edit)
+    async function openEditor(mode, memoryId = null) {
+      editingMemoryId = memoryId;
+      const currentLib = libs[activeLibIndex];
+
+      if (mode === 'edit' && memoryId) {
+        $('editorDrawerTitle').textContent = '编辑历史阶段';
+        $('groupMemoryId').style.display = 'none';
+        $('groupAutoMount').style.display = 'none';
+
+        try {
+          const res = await apiFetch(`/api/libraries/${currentLib.library_id}/memories/${memoryId}`);
+          if (!res.ok) throw new Error();
+          const m = await res.json();
+          $('inputMemoryId').value = m.memory_id;
+          $('inputDateRange').value = m.date_range;
+          $('inputStageTitle').value = m.title;
+          $('inputStageTags').value = (m.tags || []).join(', ');
+          $('inputStageContent').value = m.content;
+          $('editorWordCount').textContent = `${m.content.length} 字`;
+        } catch {
+          showToast('加载阶段详情失败');
+          return;
+        }
+      } else {
+        $('editorDrawerTitle').textContent = '记录新历史阶段';
+        $('groupMemoryId').style.display = 'block';
+        $('groupAutoMount').style.display = 'flex';
+
+        // Auto recommend ID
+        $('inputMemoryId').value = generateRecommendedId();
+        $('inputDateRange').value = '';
+        $('inputStageTitle').value = '';
+        $('inputStageTags').value = '';
+        $('inputStageContent').value = '';
+        $('editorWordCount').textContent = '0 字';
+        $('checkAutoMount').checked = true;
+      }
+
+      $('editorOverlay').classList.add('open');
+      $('editorDrawer').classList.add('open');
+    }
+
+    function generateRecommendedId() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}_${pad(now.getMonth()+1)}_${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+      return `memory_${stamp}`;
+    }
+
+    $('btnAutoId').onclick = () => {
+      $('inputMemoryId').value = generateRecommendedId();
+    };
+
+    $('inputStageContent').oninput = () => {
+      $('editorWordCount').textContent = `${$('inputStageContent').value.length} 字`;
+    };
+
+    function closeEditor() {
+      $('editorOverlay').classList.remove('open');
+      $('editorDrawer').classList.remove('open');
+      editingMemoryId = null;
+    }
+
+    $('btnNewStage').onclick = () => openEditor('create');
+    $('btnEditorClose').onclick = closeEditor;
+    $('btnEditorCancel').onclick = closeEditor;
+    $('editorOverlay').onclick = closeEditor;
+
+    $('btnEditorSubmit').onclick = async () => {
+      const currentLib = libs[activeLibIndex];
+      const dateRange = $('inputDateRange').value.trim();
+      const title = $('inputStageTitle').value.trim();
+      const content = $('inputStageContent').value.trim();
+      const rawTags = $('inputStageTags').value.trim();
+      const tags = rawTags.split(/[,，]/).map(t => t.trim()).filter(Boolean);
+
+      if (!dateRange || !title || !content) {
+        showToast('请完整填写时间跨度、标题和正文');
+        return;
+      }
+
+      try {
+        if (editingMemoryId) {
+          // Update
+          const res = await apiFetch(`/api/libraries/${currentLib.library_id}/memories/${editingMemoryId}`, {
+            method: 'PUT',
+            body: { date_range: dateRange, title, tags, content }
+          });
+          if (!res.ok) throw new Error((await res.json()).error || '更新失败');
+          showToast('阶段已成功修改');
+        } else {
+          // Create
+          const memoryId = $('inputMemoryId').value.trim() || generateRecommendedId();
+          const res = await apiFetch(`/api/libraries/${currentLib.library_id}/memories`, {
+            method: 'POST',
+            body: { memory_id: memoryId, date_range: dateRange, title, tags, content }
+          });
+          if (!res.ok) throw new Error((await res.json()).error || '创建失败');
+
+          if ($('checkAutoMount').checked) {
+            selectedMountIds.add(memoryId);
+            await apiFetch('/api/scope', {
+              method: 'POST',
+              body: { library_id: currentLib.library_id, memory_ids: Array.from(selectedMountIds) }
+            });
+            activeScope.memory_ids = Array.from(selectedMountIds);
+            activeScope.library_id = currentLib.library_id;
+          }
+          showToast('新阶段已保存入库');
+        }
+
+        closeEditor();
+        await loadData();
+      } catch (err) {
+        showToast(err.message || '保存失败');
+      }
+    };
+
+    // Novel Modal Handlers (Create & Edit Novel)
+    function openModal(id) {
+      $(`${id}Overlay`).classList.add('open');
+      $(id).classList.add('open');
+    }
+
+    function closeModal(id) {
+      $(`${id}Overlay`).classList.remove('open');
+      $(id).classList.remove('open');
+    }
+
+    $('btnNewNovel').onclick = () => {
+      novelModalMode = 'create';
+      $('novelModalTitle').textContent = '新建小说 / 世界观';
+      $('groupNovelId').style.display = 'block';
+      $('inputNovelId').value = '';
+      $('inputNovelName').value = '';
+      $('inputNovelDesc').value = '';
+      openModal('novelModal');
+    };
+
+    $('btnAutoNovelId').onclick = () => {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+      $('inputNovelId').value = `novel_${stamp}`;
+    };
+
+    $('btnEditNovel').onclick = () => {
+      const currentLib = libs[activeLibIndex];
+      if (!currentLib) return;
+      novelModalMode = 'edit';
+      $('novelModalTitle').textContent = '修改小说大纲简介';
+      $('groupNovelId').style.display = 'none';
+      $('inputNovelName').value = currentLib.name;
+      $('inputNovelDesc').value = currentLib.description || '';
+      openModal('novelModal');
+    };
+
+    $('btnNovelModalClose').onclick = () => closeModal('novelModal');
+    $('btnNovelModalCancel').onclick = () => closeModal('novelModal');
+    $('novelModalOverlay').onclick = () => closeModal('novelModal');
+
+    $('btnNovelModalSubmit').onclick = async () => {
+      const name = $('inputNovelName').value.trim();
+      const description = $('inputNovelDesc').value.trim();
+      if (!name) {
+        showToast('请输入小说名称');
+        return;
+      }
+
+      try {
+        if (novelModalMode === 'create') {
+          const libraryId = $('inputNovelId').value.trim();
+          const bodyData = { name, description };
+          if (libraryId) {
+            bodyData.library_id = libraryId;
+          }
+          const res = await apiFetch('/api/libraries', {
+            method: 'POST',
+            body: bodyData
+          });
+          if (!res.ok) throw new Error((await res.json()).error || '创建失败');
+          const data = await res.json();
+          showToast(`小说《${name}》创建成功`);
+          closeModal('novelModal');
+          await loadData();
+          const newIdx = libs.findIndex(l => l.library_id === data.library_id);
+          if (newIdx >= 0) activeLibIndex = newIdx;
+          render();
+        } else {
+          const currentLib = libs[activeLibIndex];
+          const res = await apiFetch(`/api/libraries/${currentLib.library_id}`, {
+            method: 'PUT',
+            body: { name, description }
+          });
+          if (!res.ok) throw new Error((await res.json()).error || '修改失败');
+          showToast('小说信息已更新');
+          closeModal('novelModal');
+          await loadData();
+        }
+      } catch (err) {
+        showToast(err.message || '操作失败');
+      }
+    };
+
+    // Delete Modal Handlers
+    $('btnDeleteModalClose').onclick = () => closeModal('deleteModal');
+    $('btnDeleteCancel').onclick = () => closeModal('deleteModal');
+    $('deleteModalOverlay').onclick = () => closeModal('deleteModal');
+
+    $('btnDeleteSubmit').onclick = async () => {
+      if (!deletingMemoryId) return;
+      const currentLib = libs[activeLibIndex];
+      try {
+        const res = await apiFetch(`/api/libraries/${currentLib.library_id}/memories/${deletingMemoryId}`, {
+          method: 'DELETE'
+        });
+        if (!res.ok) throw new Error((await res.json()).error || '删除失败');
+        selectedMountIds.delete(deletingMemoryId);
+        showToast('阶段已成功删除');
+        closeModal('deleteModal');
+        deletingMemoryId = null;
+        await loadData();
+      } catch (err) {
+        showToast(err.message || '删除失败');
+      }
+    };
+
+    // Token / Password Modal Handlers
+    $('btnSetToken').onclick = () => {
+      $('inputCurrentToken').value = getToken();
+      $('inputNewToken').value = '';
+      openModal('tokenModal');
+    };
+
+    $('btnTokenModalClose').onclick = () => closeModal('tokenModal');
+    $('tokenModalOverlay').onclick = () => closeModal('tokenModal');
+
+    // Change server password/token
+    $('btnChangePassword').onclick = async () => {
+      const newToken = $('inputNewToken').value.trim();
+      if (!newToken || newToken.length < 6) {
+        showToast('新管理密码长度不得少于 6 位');
+        return;
+      }
+      try {
+        const res = await apiFetch('/api/token', {
+          method: 'POST',
+          body: { new_token: newToken }
+        });
+        if (!res.ok) throw new Error((await res.json()).error || '修改失败');
+        sessionStorage.novelMemoryToken = newToken;
+        $('inputCurrentToken').value = newToken;
+        $('inputNewToken').value = '';
+        showToast('管理密码已成功修改！');
+        closeModal('tokenModal');
+      } catch (err) {
+        showToast(err.message || '密码修改失败');
+      }
+    };
+
+    // Save local token
+    $('btnSaveLocalToken').onclick = async () => {
+      const token = $('inputCurrentToken').value.trim();
+      sessionStorage.novelMemoryToken = token;
+      showToast('当前设备登录凭证已更新');
+      closeModal('tokenModal');
+      await loadData();
+    };
+
+    // Logout
+    $('btnLogout').onclick = async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      sessionStorage.removeItem('novelMemoryToken');
+      showToast('已退出登录');
+      closeModal('tokenModal');
+      setTimeout(() => location.reload(), 600);
+    };
+
+    // Batch / Direct File Upload
+    $('btnUploadMd').onclick = () => {
+      $('inputMdFiles').value = '';
+      $('inputMdFiles').click();
+    };
+
+    $('inputMdFiles').onchange = e => {
+      if (e.target.files && e.target.files.length) {
+        handleFilesUpload(e.target.files);
+      }
+    };
+
+    // Drag and Drop Handling
+    let dragCounter = 0;
+    window.addEventListener('dragenter', e => {
+      e.preventDefault();
+      dragCounter++;
+      $('dragDropOverlay').classList.add('active');
+    });
+
+    window.addEventListener('dragleave', e => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        $('dragDropOverlay').classList.remove('active');
+      }
+    });
+
+    window.addEventListener('dragover', e => {
+      e.preventDefault();
+    });
+
+    window.addEventListener('drop', e => {
+      e.preventDefault();
+      dragCounter = 0;
+      $('dragDropOverlay').classList.remove('active');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        handleFilesUpload(e.dataTransfer.files);
+      }
+    });
+
+    async function handleFilesUpload(fileList) {
+      const currentLib = libs[activeLibIndex];
+      if (!currentLib) {
+        showToast('请先选择一本小说');
+        return;
+      }
+      const files = Array.from(fileList).filter(f => f.name.endsWith('.md') || f.name.endsWith('.markdown') || f.type === 'text/markdown');
+      if (!files.length) {
+        showToast('未检测到 .md Markdown 文件');
+        return;
+      }
+
+      let successCount = 0;
+      let failCount = 0;
+      showToast(`正在上传导入 ${files.length} 个文件...`);
+
+      for (const file of files) {
+        try {
+          const text = await file.text();
+          const res = await apiFetch(`/api/libraries/${currentLib.library_id}/memories`, {
+            method: 'POST',
+            body: {
+              filename: file.name,
+              raw_markdown: text,
+              overwrite: true,
+            }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            selectedMountIds.add(data.memory_id);
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } catch {
+          failCount++;
+        }
+      }
+
+      showToast(`导入完成！成功 ${successCount} 个${failCount ? `，失败 ${failCount} 个` : ''}`);
+      await loadData();
+    }
+
+    // Import file directly into Editor Form
+    $('btnImportLocalToForm').onclick = () => {
+      $('inputFormFile').value = '';
+      $('inputFormFile').click();
+    };
+
+    $('inputFormFile').onchange = async e => {
+      if (!e.target.files || !e.target.files.length) return;
+      const file = e.target.files[0];
+      try {
+        const text = await file.text();
+        parseAndFillForm(file.name, text);
+        showToast('已从本地文件提取内容填入表单');
+      } catch {
+        showToast('读取本地文件失败');
+      }
+    };
+
+    function parseAndFillForm(filename, text) {
+      const stem = filename.replace(/\.(md|markdown)$/i, '');
+      const frontMatterMatch = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+      if (frontMatterMatch) {
+        const yaml = frontMatterMatch[1];
+        const content = frontMatterMatch[2].trim();
+        const meta = {};
+        for (const line of yaml.split(/\r?\n/)) {
+          if (!line.trim() || line.trim().startsWith('#')) continue;
+          const idx = line.indexOf(':');
+          if (idx > -1) {
+            const key = line.slice(0, idx).trim();
+            let val = line.slice(idx + 1).trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.slice(1, -1);
+            }
+            meta[key] = val;
+          }
+        }
+        if (meta.id) $('inputMemoryId').value = meta.id;
+        if (meta.date_range) $('inputDateRange').value = meta.date_range;
+        if (meta.title) $('inputStageTitle').value = meta.title;
+        if (meta.tags) $('inputStageTags').value = meta.tags;
+        $('inputStageContent').value = content;
+        $('editorWordCount').textContent = `${content.length} 字`;
+      } else {
+        $('inputMemoryId').value = `memory_${stem.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+        $('inputStageTitle').value = stem;
+        $('inputDateRange').value = '未标注时间';
+        $('inputStageTags').value = '';
+        $('inputStageContent').value = text.trim();
+        $('editorWordCount').textContent = `${text.trim().length} 字`;
+      }
+    }
+
+    // Start
+    loadData();
+  </script>
+</body>
+</html>

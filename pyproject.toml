@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novel-memory-mcp"
+version = "0.1.0"
+description = "Curated story memory for RikkaHub and MCP clients with a self-hosted web console"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.20.0,<2",
+  "uvicorn>=0.30.0,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/syydmtl/novel-memory-mcp"
+Repository = "https://github.com/syydmtl/novel-memory-mcp"
+Issues = "https://github.com/syydmtl/novel-memory-mcp/issues"
+
+[project.optional-dependencies]
+dev = [
+  "bandit>=1.8,<2",
+  "pip-audit>=2.9,<3",
+  "pytest>=9.0.3,<10",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+novel-memory-mcp = "novel_memory_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["novel_memory_mcp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+exclude = [".venv"]
