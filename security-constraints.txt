@@ -3,6 +3,7 @@
 mcp>=1.30.0,<2
 certifi>=2026.10.19
 PyJWT>=2.15.0
+# filelock belongs to the optional audit environment (Python 3.11+).
 filelock>=4.2.1
 msgpack>=1.2.3
 urllib3>=2.8.0

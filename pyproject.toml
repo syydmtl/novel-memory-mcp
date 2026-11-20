@@ -23,10 +23,10 @@ Issues = "https://github.com/syydmtl/novel-memory-mcp/issues"
 [project.optional-dependencies]
 dev = [
   "bandit>=1.8,<2",
-  "pip-audit>=2.9,<3",
   "pytest>=9.0.3,<10",
   "ruff>=0.12,<1",
 ]
+audit = ["pip-audit>=2.9,<3"]
 
 [project.scripts]
 novel-memory-mcp = "novel_memory_mcp.server:main"

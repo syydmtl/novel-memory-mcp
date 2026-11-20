@@ -15,7 +15,7 @@
 python -m venv .venv
 ```
 
-Windows 使用 `.venvScriptspython.exe`，macOS / Linux 使用 `.venv/bin/python`：
+Windows 使用 `.venv\Scripts\python.exe`，macOS / Linux 使用 `.venv/bin/python`：
 
 ```bash
 python -m pip install -e ".[dev]" -c security-constraints.txt
@@ -27,6 +27,17 @@ python -m ruff check .
 
 请优先提交范围清楚的小修改。修改检索、读取或开放范围时，补充能够验证实际行为的测试。
 如果改变记忆格式、配置项、工具返回结构或启动方式，也请同步更新中英文文档。
+
+## 依赖安全审计
+
+项目和测试支持 Python 3.10+。安全审计工具的依赖需要 Python 3.11+，请在单独的 Python 3.11+ 虚拟环境中安装：
+
+```bash
+python -m pip install -e ".[audit]" -c security-constraints.txt
+python -m pip_audit
+```
+
+常规开发安装 `.[dev]` 即可；CI 使用独立 Python 3.13 审计任务，避免审计工具影响 Python 3.10 安装。
 
 ## 设计约定
 

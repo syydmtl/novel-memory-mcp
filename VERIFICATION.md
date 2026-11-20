@@ -4,7 +4,7 @@
 
 - 在独立临时副本和全新 Python 3.13 虚拟环境中安装成功，按 `security-constraints.txt` 应用依赖安全约束。
 - 55 项 pytest 测试通过，包括通过 Node.js 执行的前端交互回归用例。
-- Ruff、Bandit、pip check 通过；pip-audit 未发现已知依赖漏洞。
+- Ruff、Bandit、pip check 通过；独立 `audit` 依赖环境中的 pip-audit 未发现已知依赖漏洞。
 - Python wheel 构建通过。
 - 实际运行独立管理网页，验证原随机密码登录、Unicode 密码修改和登录，以及认证后的网页字节与发布源码一致。
 - 实际启动 MCP HTTP 和 STDIO，验证四个工具发现、搜索、完整读取和批量读取。
