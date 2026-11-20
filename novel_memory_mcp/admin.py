@@ -1,9 +1,11 @@
 """Small authenticated web API for selecting the active memory scope."""
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,76 @@ from starlette.responses import (
 )
 from starlette.routing import Route
 
-from .store import MemoryStore
+from .files import atomic_write, file_lock
+from .store import ConflictError, MemoryStore, ScopeError
+
+
+class PreconditionError(ValueError):
+    """A modifying client must first read the current version."""
+
+
+async def _object_body(request: Any) -> dict[str, Any]:
+    body = json.loads(await request.body())
+    if not isinstance(body, dict):
+        raise TypeError("JSON body must be an object")
+    return body
+
+
+def _string(body: dict[str, Any], key: str, default: str = "") -> str:
+    value = body.get(key, default)
+    if not isinstance(value, str):
+        raise TypeError(f"{key} must be a string")
+    return value
+
+
+def _strings(body: dict[str, Any], key: str) -> list[str]:
+    value = body.get(key, [])
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise TypeError(f"{key} must be a list of strings")
+    return value
+
+
+def _digest(body: dict[str, Any], *, required: bool = False) -> str | None:
+    if "expected_digest" not in body:
+        if required:
+            raise PreconditionError("read the current record and include expected_digest before modifying it")
+        return None
+    value = _string(body, "expected_digest")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+        raise ValueError("expected_digest must be a SHA-256 digest")
+    return value.lower()
+
+
+def _error(exc: Exception, status: int = 400) -> JSONResponse:
+    code = "invalid_request"
+    if isinstance(exc, ScopeError):
+        status, code = 503, "invalid_scope"
+    elif isinstance(exc, ConflictError):
+        status, code = 409, "conflict"
+    elif isinstance(exc, PreconditionError):
+        status, code = 428, "precondition_required"
+    elif isinstance(exc, OSError):
+        return JSONResponse({"error": "File operation failed; check permissions and available disk space", "code": "storage_error"}, status_code=503)
+    result = {"error": str(exc), "code": code}
+    if isinstance(exc, ConflictError) and exc.memory_id:
+        result["memory_id"] = exc.memory_id
+    return JSONResponse(result, status_code=status)
+
+
+def _matches(presented: str, expected: str) -> bool:
+    try:
+        return bool(expected) and hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
+    except UnicodeError:
+        return False
+
+
+def _session_value(token: str) -> str:
+    return "v1." + hmac.new(token.encode("utf-8"), b"novel-memory-admin-session-v1", hashlib.sha256).hexdigest()
+
+
+def _set_session(response: JSONResponse, request: Any, token: str) -> None:
+    response.set_cookie("novel_memory_session", _session_value(token), httponly=True,
+                        secure=request.url.scheme == "https", samesite="lax", max_age=60 * 60 * 24 * 30)
 
 
 def _admin_token_path() -> Path:
@@ -42,8 +113,11 @@ def _expected_token() -> str:
 def _authorized(request: Any) -> bool:
     expected = _expected_token()
     presented = request.headers.get("authorization", "")
-    token = presented[7:].strip() if presented.lower().startswith("bearer ") else request.cookies.get("novel_memory_session", "")
-    return bool(expected) and hmac.compare_digest(token, expected)
+    if presented.lower().startswith("bearer "):
+        return _matches(presented[7:].strip(), expected)
+    cookie = request.cookies.get("novel_memory_session", "")
+    # Keep existing ASCII sessions valid; new sessions never contain the password.
+    return bool(expected) and (_matches(cookie, _session_value(expected)) or _matches(cookie, expected))
 
 
 async def guard(request: Any, call_next: Any) -> Any:
@@ -59,19 +133,24 @@ def store() -> MemoryStore:
 async def libraries(request: Any) -> JSONResponse:
     if request.method == "POST":
         try:
-            body = json.loads(await request.body())
+            body = await _object_body(request)
             result = store().create_library(
-                str(body.get("library_id", "")),
-                str(body.get("name", "")),
-                str(body.get("description", "")),
+                _string(body, "library_id"),
+                _string(body, "name"),
+                _string(body, "description"),
             )
             return JSONResponse(result, status_code=201)
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            return JSONResponse({"error": str(exc)}, status_code=400)
+        except (ValueError, TypeError, OSError) as exc:
+            return _error(exc)
     result = []
     for item in store().list_libraries():
         item = dict(item)
-        item["memories"] = store().list_library_memories(str(item["library_id"]))
+        try:
+            item["memories"] = store().list_library_memories(str(item["library_id"]), item["errors"])
+        except (ValueError, TypeError, OSError, RuntimeError) as exc:
+            item["memories"] = []
+            item["errors"].append({"file": "memories", "error": str(exc)})
+        item["memory_count"] = len(item["memories"])
         result.append(item)
     return JSONResponse(result)
 
@@ -79,46 +158,51 @@ async def libraries(request: Any) -> JSONResponse:
 async def library_item(request: Any) -> JSONResponse:
     library_id = request.path_params["library_id"]
     try:
-        body = json.loads(await request.body())
+        body = await _object_body(request)
         result = store().update_library(
             library_id,
-            str(body.get("name", "")),
-            str(body.get("description", "")),
+            _string(body, "name"),
+            _string(body, "description"),
         )
         return JSONResponse(result)
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+    except (ValueError, TypeError, OSError) as exc:
+        return _error(exc)
 
 
 async def memory_collection(request: Any) -> JSONResponse:
     library_id = request.path_params["library_id"]
     try:
-        body = json.loads(await request.body())
+        body = await _object_body(request)
         raw_markdown = body.get("raw_markdown")
-        overwrite = bool(body.get("overwrite", False))
+        overwrite = body.get("overwrite", False)
+        if not isinstance(overwrite, bool):
+            raise TypeError("overwrite must be a boolean")
+        expected_digest = _digest(body, required=overwrite)
         if raw_markdown is not None:
-            filename = str(body.get("filename", "memory.md"))
+            filename = _string(body, "filename", "memory.md")
             result = store().import_raw_markdown(
                 library_id=library_id,
                 filename=filename,
-                raw_text=str(raw_markdown),
+                raw_text=_string(body, "raw_markdown"),
                 overwrite=overwrite,
+                expected_digest=expected_digest,
             )
             return JSONResponse(result, status_code=201)
 
         result = store().save_library_memory(
             library_id=library_id,
-            memory_id=str(body.get("memory_id", "")),
-            date_range=str(body.get("date_range", "")),
-            title=str(body.get("title", "")),
+            memory_id=_string(body, "memory_id"),
+            date_range=_string(body, "date_range"),
+            title=_string(body, "title"),
             tags=body.get("tags", ""),
-            content=str(body.get("content", "")),
+            content=_string(body, "content"),
             is_new=True,
             overwrite=overwrite,
+            expected_digest=expected_digest,
         )
         return JSONResponse(result, status_code=201)
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+    except (ValueError, TypeError, OSError) as exc:
+        return _error(exc)
 
 
 async def memory_item(request: Any) -> JSONResponse:
@@ -127,72 +211,79 @@ async def memory_item(request: Any) -> JSONResponse:
     if request.method == "GET":
         try:
             return JSONResponse(store().get_library_memory(library_id, memory_id))
-        except ValueError as exc:
-            return JSONResponse({"error": str(exc)}, status_code=404)
+        except (ValueError, TypeError, OSError) as exc:
+            return _error(exc, 404)
     elif request.method == "PUT":
         try:
-            body = json.loads(await request.body())
+            body = await _object_body(request)
             result = store().save_library_memory(
                 library_id=library_id,
                 memory_id=memory_id,
-                date_range=str(body.get("date_range", "")),
-                title=str(body.get("title", "")),
+                date_range=_string(body, "date_range"),
+                title=_string(body, "title"),
                 tags=body.get("tags", ""),
-                content=str(body.get("content", "")),
+                content=_string(body, "content"),
                 is_new=False,
+                expected_digest=_digest(body, required=True),
             )
             return JSONResponse(result)
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            return JSONResponse({"error": str(exc)}, status_code=400)
+        except (ValueError, TypeError, OSError) as exc:
+            return _error(exc)
     elif request.method == "DELETE":
         try:
-            store().delete_library_memory(library_id, memory_id)
+            body = await _object_body(request)
+            store().delete_library_memory(library_id, memory_id, _digest(body, required=True))
             return JSONResponse({"ok": True})
-        except ValueError as exc:
-            return JSONResponse({"error": str(exc)}, status_code=400)
+        except (ValueError, TypeError, OSError) as exc:
+            return _error(exc)
     return JSONResponse({"error": "method not allowed"}, status_code=405)
 
 
 async def scope(request: Any) -> JSONResponse:
     if request.method == "GET":
-        return JSONResponse(store().active_scope())
+        try:
+            return JSONResponse(store().active_scope())
+        except ScopeError as exc:
+            return _error(exc)
     try:
-        body = json.loads(await request.body())
-        result = store().set_scope(str(body.get("library_id", "")), list(body.get("memory_ids", [])))
+        body = await _object_body(request)
+        result = store().set_scope(_string(body, "library_id"), _strings(body, "memory_ids"))
         return JSONResponse(result)
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
+    except (ValueError, TypeError, OSError) as exc:
+        return _error(exc)
 
 
 async def token_management(request: Any) -> JSONResponse:
     if request.method == "POST":
         try:
-            body = json.loads(await request.body())
-            new_token = str(body.get("new_token", "")).strip()
+            body = await _object_body(request)
+            new_token = _string(body, "new_token").strip()
             if len(new_token) < 6:
                 return JSONResponse({"error": "新 Token 密码长度不得少于 6 位"}, status_code=400)
+            if len(new_token) > 256 or any(ord(character) < 32 for character in new_token):
+                raise ValueError("password must be at most 256 characters and contain no control characters")
+            response = JSONResponse({"ok": True})
+            _set_session(response, request, new_token)
             token_path = _admin_token_path()
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-            token_path.write_text(new_token + "\n", encoding="utf-8")
-            response = JSONResponse({"ok": True, "token": new_token})
-            response.set_cookie("novel_memory_session", new_token, httponly=True, secure=request.url.scheme == "https", samesite="lax", max_age=60 * 60 * 24 * 30)
+            with file_lock(token_path, store().index_path.parent / "locks"):
+                atomic_write(token_path, new_token + "\n")
             return response
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            return JSONResponse({"error": str(exc)}, status_code=400)
+        except (ValueError, TypeError, OSError) as exc:
+            return _error(exc)
     return JSONResponse({"error": "method not allowed"}, status_code=405)
 
 
 async def login(request: Any) -> JSONResponse:
     try:
-        body = json.loads(await request.body())
-        token = str(body.get("token", "")).strip()
-    except (TypeError, json.JSONDecodeError):
-        token = ""
+        body = await _object_body(request)
+        token = _string(body, "token").strip()
+    except (ValueError, TypeError) as exc:
+        return _error(exc)
     expected = _expected_token()
-    if not expected or not hmac.compare_digest(token, expected):
+    if not _matches(token, expected):
         return JSONResponse({"error": "管理密码不正确"}, status_code=401)
     response = JSONResponse({"ok": True})
-    response.set_cookie("novel_memory_session", token, httponly=True, secure=request.url.scheme == "https", samesite="lax", max_age=60 * 60 * 24 * 30)
+    _set_session(response, request, token)
     return response
 
 

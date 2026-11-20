@@ -20,6 +20,10 @@ Long-running stories accumulate promises, relationships, secrets, and unfinished
 
 Two generic fictional demo stages are included. The server does not automatically summarize conversations, update memories, or inject all history into chat.
 
+## v0.1.1
+
+Safer Chinese filename imports, conflict detection for stale edits, history backups before edits and deletes, Unicode management passwords, clearer pending versus saved scope, and fail-closed handling of damaged scope files. Update the code and dependencies, restart both services, and reload existing browser tabs. Existing Markdown, credentials, and scope files remain in use. See the [changelog](CHANGELOG.md).
+
 ## Quick start
 
 Requires Python 3.10+ and SQLite with FTS5 support. Installing dependencies requires internet access.
@@ -28,7 +32,7 @@ Requires Python 3.10+ and SQLite with FTS5 support. Installing dependencies requ
 git clone https://github.com/syydmtl/novel-memory-mcp.git
 cd novel-memory-mcp
 python3 -m venv .venv
-.venv/bin/python -m pip install -e "."
+.venv/bin/python -m pip install -e "." -c security-constraints.txt
 .venv/bin/python run.py setup
 .venv/bin/python run.py check
 ```

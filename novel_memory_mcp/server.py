@@ -107,7 +107,7 @@ def _bearer_guard(app: Any, expected: str) -> Any:
         }
         presented = headers.get("authorization", "")
         token = presented[7:].strip() if presented.lower().startswith("bearer ") else ""
-        if not hmac.compare_digest(token, expected):
+        if not hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
             await send(
                 {
                     "type": "http.response.start",
@@ -131,6 +131,8 @@ def _validated_http_token(raw: str) -> str:
         raise RuntimeError("NOVEL_MEMORY_TOKEN is required in HTTP mode")
     if len(token) < MIN_HTTP_TOKEN_CHARS:
         raise RuntimeError(f"NOVEL_MEMORY_TOKEN must contain at least {MIN_HTTP_TOKEN_CHARS} characters")
+    if not token.isascii() or any(ord(character) < 33 or ord(character) > 126 for character in token):
+        raise RuntimeError("NOVEL_MEMORY_TOKEN must use printable ASCII characters without spaces")
     if token.lower().startswith(("change-me", "replace-with")):
         raise RuntimeError("Replace the example NOVEL_MEMORY_TOKEN before starting HTTP mode")
     return token

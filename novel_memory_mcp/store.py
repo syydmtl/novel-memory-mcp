@@ -6,13 +6,42 @@ import json
 import os
 import re
 import sqlite3
+import time
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+
+from .files import atomic_write, file_lock
 
 MEMORY_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 FRONT_MATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?(.*)\Z", re.DOTALL)
 QUERY_SEPARATOR_RE = re.compile(r"[\s,，、;；|/]+")
 REQUIRED_FIELDS = ("id", "date_range", "title")
+
+
+class ConflictError(ValueError):
+    """An existing record or its version conflicts with the requested write."""
+
+    def __init__(self, message: str, memory_id: str | None = None):
+        super().__init__(message)
+        self.memory_id = memory_id
+
+
+class ScopeError(ValueError):
+    """An existing scope could not be validated; never fall back to other stories."""
+
+
+def _single_line(value: str, field: str, *, required: bool = True) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be a string")
+    if any(character in value for character in "\r\n\v\f\x00\x1c\x1d\x1e\x85\u2028\u2029"):
+        raise ValueError(f"{field} must be a single line")
+    value = value.strip()
+    if required and not value:
+        raise ValueError(f"{field} must not be blank")
+    return value
 
 
 @dataclass(frozen=True)
@@ -89,6 +118,10 @@ class MemoryStore:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError(f"{path}: memory files must be UTF-8 Markdown") from exc
+        return self._parse_block(text, path, hashlib.sha256(raw).hexdigest())
+
+    def _parse_block(self, text: str, path: Path, digest: str = "") -> MemoryBlock:
+        text = text.removeprefix("\ufeff")
         match = FRONT_MATTER_RE.match(text)
         if not match:
             raise ValueError(f"{path}: missing YAML front matter")
@@ -97,7 +130,7 @@ class MemoryStore:
         if missing:
             raise ValueError(f"{path}: missing required metadata: {', '.join(missing)}")
         memory_id = metadata["id"]
-        if not MEMORY_ID_RE.fullmatch(memory_id):
+        if not MEMORY_ID_RE.fullmatch(memory_id) or memory_id.casefold() == "readme":
             raise ValueError(f"{path}: id must contain only letters, digits, underscores, or hyphens")
         # The newline immediately after front matter is formatting, not memory content.
         content = match.group(2).lstrip("\r\n").rstrip()
@@ -110,7 +143,7 @@ class MemoryStore:
             tags=metadata.get("tags", ""),
             content=content,
             path=str(path.resolve()),
-            digest=hashlib.sha256(raw).hexdigest(),
+            digest=digest or hashlib.sha256(text.encode("utf-8")).hexdigest(),
         )
 
     @staticmethod
@@ -126,25 +159,75 @@ class MemoryStore:
             if key in metadata:
                 raise ValueError(f"{path}: duplicate metadata key: {key}")
             if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-                value = value[1:-1]
+                if value[0] == '"':
+                    try:
+                        decoded = json.loads(value)
+                    except json.JSONDecodeError:
+                        decoded = value[1:-1]
+                    if not isinstance(decoded, str):
+                        raise ValueError(f"{path}: metadata values must be strings")
+                    value = decoded
+                else:
+                    value = value[1:-1]
+            value = _single_line(value, key, required=False)
             metadata[key] = value
         return metadata
 
-    def _scan(self) -> list[MemoryBlock]:
-        memory_dir = self._active_memory_dir()
+    def _scan_directory(self, memory_dir: Path) -> tuple[list[MemoryBlock], list[dict[str, str]]]:
         if not memory_dir.is_dir():
             raise RuntimeError(f"memory directory does not exist or is not a directory: {memory_dir}")
-        blocks: list[MemoryBlock] = []
-        ids: set[str] = set()
+        blocks: dict[str, MemoryBlock] = {}
+        duplicate_ids: set[str] = set()
+        errors: list[dict[str, str]] = []
         for path in sorted(memory_dir.rglob("*.md")):
-            block = self._read_block(path)
+            if path.resolve().is_relative_to((self.index_path.parent / "history").resolve()):
+                continue
+            try:
+                if not path.resolve().is_relative_to(memory_dir.resolve()):
+                    raise ValueError("memory file must stay inside its library")
+                block = self._read_block(path)
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append({"file": path.relative_to(memory_dir).as_posix(), "error": str(exc)})
+                continue
             if block is None:
                 continue
-            if block.memory_id in ids:
-                raise ValueError(f"duplicate memory id: {block.memory_id}")
-            ids.add(block.memory_id)
-            blocks.append(block)
+            if block.memory_id in blocks or block.memory_id in duplicate_ids:
+                duplicate_ids.add(block.memory_id)
+                errors.append({"file": path.relative_to(memory_dir).as_posix(), "memory_id": block.memory_id,
+                               "error": f"duplicate memory id: {block.memory_id}"})
+                blocks.pop(block.memory_id, None)
+                continue
+            blocks[block.memory_id] = block
+        return list(blocks.values()), errors
+
+    def _scan(self, scope: dict[str, object] | None = None) -> list[MemoryBlock]:
+        scope = self.active_scope() if scope is None else scope
+        blocks, _ = self._scan_directory(self._active_memory_dir(scope))
+        if scope["library_id"]:
+            selected = set(scope["memory_ids"])
+            blocks = [block for block in blocks if block.memory_id in selected]
         return blocks
+
+    def _library_block(self, library_id: str, memory_id: str) -> MemoryBlock:
+        if not isinstance(library_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
+            raise ValueError("invalid library_id")
+        if not isinstance(memory_id, str) or not MEMORY_ID_RE.fullmatch(memory_id):
+            raise ValueError("invalid memory_id")
+        blocks, errors = self._scan_directory(self.library_root / library_id / "memories")
+        if any(error.get("memory_id") == memory_id for error in errors):
+            raise ConflictError(f"duplicate memory id: {memory_id}; fix the duplicate files first")
+        for block in blocks:
+            if block.memory_id == memory_id:
+                return block
+        raise ValueError(f"memory not found: {memory_id}")
+
+    def _backup(self, path: Path, library_id: str, memory_id: str) -> Path:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            raw = handle.read()
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+        backup = self.index_path.parent / "history" / library_id / memory_id / f"{time.time_ns()}-{digest}.md"
+        atomic_write(backup, raw)
+        return backup
 
     def list_libraries(self) -> list[dict[str, object]]:
         root = self.library_root
@@ -154,8 +237,15 @@ class MemoryStore:
         for directory in sorted(path for path in root.iterdir() if path.is_dir() and not path.name.startswith(".")):
             metadata_path = directory / "library.json"
             metadata: dict[str, object] = {}
+            errors: list[dict[str, str]] = []
             if metadata_path.is_file():
-                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                try:
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8").removeprefix("\ufeff"))
+                    if not isinstance(metadata, dict):
+                        raise TypeError("library metadata must be a JSON object")
+                except (OSError, ValueError, TypeError) as exc:
+                    metadata = {}
+                    errors.append({"file": "library.json", "error": str(exc)})
             memory_dir = directory / "memories"
             count = len(list(memory_dir.rglob("*.md"))) if memory_dir.is_dir() else 0
             result.append({
@@ -163,16 +253,21 @@ class MemoryStore:
                 "name": str(metadata.get("name", directory.name)),
                 "description": str(metadata.get("description", "")),
                 "memory_count": count,
+                "errors": errors,
             })
         return result
 
-    def list_library_memories(self, library_id: str) -> list[dict[str, object]]:
+    def list_library_memories(
+        self, library_id: str, errors: list[dict[str, str]] | None = None,
+    ) -> list[dict[str, object]]:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
             raise ValueError("invalid library_id")
         directory = self.library_root / library_id / "memories"
         if not directory.is_dir():
             raise ValueError(f"library not found: {library_id}")
-        blocks = [self._read_block(path) for path in sorted(directory.rglob("*.md"))]
+        blocks, issues = self._scan_directory(directory)
+        if errors is not None:
+            errors.extend(issues)
         return [
             {
                 "memory_id": block.memory_id,
@@ -190,13 +285,7 @@ class MemoryStore:
             raise ValueError("invalid library_id")
         if not MEMORY_ID_RE.fullmatch(memory_id):
             raise ValueError("invalid memory_id")
-        directory = self.library_root / library_id / "memories"
-        target = directory / f"{memory_id}.md"
-        if not target.is_file():
-            raise ValueError(f"memory not found: {memory_id}")
-        block = self._read_block(target)
-        if block is None:
-            raise ValueError(f"cannot read memory block: {memory_id}")
+        block = self._library_block(library_id, memory_id)
         return {
             "memory_id": block.memory_id,
             "date_range": block.date_range,
@@ -218,13 +307,16 @@ class MemoryStore:
         content: str,
         is_new: bool = False,
         overwrite: bool = False,
+        expected_digest: str | None = None,
     ) -> dict[str, object]:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
             raise ValueError("invalid library_id")
-        if not MEMORY_ID_RE.fullmatch(memory_id):
+        if not isinstance(memory_id, str) or not MEMORY_ID_RE.fullmatch(memory_id) or memory_id.casefold() == "readme":
             raise ValueError("invalid memory_id")
-        date_range = date_range.strip()
-        title = title.strip()
+        date_range = _single_line(date_range, "date_range")
+        title = _single_line(title, "title")
+        if not isinstance(content, str):
+            raise TypeError("content must be a string")
         content = content.strip()
         if not date_range:
             raise ValueError("date_range must not be blank")
@@ -236,28 +328,42 @@ class MemoryStore:
         directory = self.library_root / library_id / "memories"
         if not directory.is_dir():
             raise ValueError(f"library not found: {library_id}")
-        target = directory / f"{memory_id}.md"
-        if is_new and target.exists() and not overwrite:
-            raise ValueError(f"memory already exists: {memory_id}")
-        if not is_new and not target.is_file() and not overwrite:
-            raise ValueError(f"memory not found: {memory_id}")
-
         if isinstance(tags, list):
-            tags_str = ", ".join(str(t).strip() for t in tags if str(t).strip())
+            tags_str = ", ".join(_single_line(tag, "tags", required=False) for tag in tags)
         else:
-            tags_str = str(tags).strip()
+            tags_str = _single_line(tags, "tags", required=False)
 
         markdown_text = (
             f"---\n"
             f"id: {memory_id}\n"
-            f"date_range: {date_range}\n"
-            f"title: {title}\n"
-            f"tags: {tags_str}\n"
+            f"date_range: {json.dumps(date_range, ensure_ascii=False)}\n"
+            f"title: {json.dumps(title, ensure_ascii=False)}\n"
+            f"tags: {json.dumps(tags_str, ensure_ascii=False)}\n"
             f"---\n\n"
             f"{content}\n"
         )
-        target.write_text(markdown_text, encoding="utf-8")
-        return self.get_library_memory(library_id, memory_id)
+        # Lock by logical ID, including records whose actual filename differs.
+        canonical = directory / f"{memory_id}.md"
+        self._parse_block(markdown_text, canonical)
+        with file_lock(canonical, self.index_path.parent / "locks"):
+            try:
+                old = self._library_block(library_id, memory_id)
+            except ConflictError:
+                raise
+            except ValueError:
+                old = None
+            target = Path(old.path) if old else canonical
+            exists = target.exists()
+            if is_new and exists and not overwrite:
+                raise ConflictError(f"memory already exists: {memory_id}", memory_id)
+            if not is_new and old is None:
+                raise ValueError(f"memory not found: {memory_id}")
+            if expected_digest is not None and (old is None or old.digest != expected_digest):
+                raise ConflictError("record changed since it was opened; reload or save a separate copy")
+            if exists:
+                self._backup(target, library_id, memory_id)
+            atomic_write(target, markdown_text)
+            return self.get_library_memory(library_id, memory_id)
 
     def import_raw_markdown(
         self,
@@ -265,6 +371,7 @@ class MemoryStore:
         filename: str,
         raw_text: str,
         overwrite: bool = False,
+        expected_digest: str | None = None,
     ) -> dict[str, object]:
         """Import an existing Markdown file directly, extracting front matter if present."""
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
@@ -273,19 +380,22 @@ class MemoryStore:
         if not directory.is_dir():
             raise ValueError(f"library not found: {library_id}")
 
+        raw_text = raw_text.removeprefix("\ufeff")
         stem = Path(filename).stem
         clean_stem = re.sub(r"[^A-Za-z0-9_-]", "_", stem).strip("_")
+        suffix = hashlib.sha256(filename.encode("utf-8")).hexdigest()[:16]
+        generated_id = stem if MEMORY_ID_RE.fullmatch(stem) else f"memory_{clean_stem[:70]}_{suffix}"
 
         match = FRONT_MATTER_RE.match(raw_text)
         if match:
             meta = self._parse_metadata(match.group(1), Path(filename))
-            memory_id = meta.get("id", clean_stem or "memory_imported")
+            memory_id = meta.get("id", generated_id)
             date_range = meta.get("date_range", "未标注时间")
             title = meta.get("title", stem or "未命名阶段")
             tags = meta.get("tags", "")
             content = match.group(2).lstrip("\r\n").rstrip()
         else:
-            memory_id = clean_stem if MEMORY_ID_RE.fullmatch(clean_stem) else f"memory_{clean_stem}"
+            memory_id = generated_id
             date_range = "未标注时间"
             first_line = raw_text.strip().splitlines()[0] if raw_text.strip() else ""
             if first_line.startswith("#"):
@@ -297,7 +407,7 @@ class MemoryStore:
             tags = ""
 
         if not MEMORY_ID_RE.fullmatch(memory_id):
-            memory_id = f"mem_{int(hashlib.md5(filename.encode('utf-8')).hexdigest()[:8], 16)}"
+            raise ValueError("invalid memory_id in imported metadata")
 
         if not content:
             raise ValueError(f"{filename}: file content must not be blank")
@@ -311,27 +421,32 @@ class MemoryStore:
             content=content,
             is_new=True,
             overwrite=overwrite,
+            expected_digest=expected_digest,
         )
 
-    def delete_library_memory(self, library_id: str, memory_id: str) -> bool:
+    def delete_library_memory(
+        self, library_id: str, memory_id: str, expected_digest: str | None = None,
+    ) -> bool:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
             raise ValueError("invalid library_id")
         if not MEMORY_ID_RE.fullmatch(memory_id):
             raise ValueError("invalid memory_id")
-        directory = self.library_root / library_id / "memories"
-        target = directory / f"{memory_id}.md"
-        if not target.is_file():
-            raise ValueError(f"memory not found: {memory_id}")
-        target.unlink()
-
-        scope = self._scope()
-        if scope.get("library_id") == library_id and memory_id in scope.get("memory_ids", []):
-            remaining = [m for m in scope.get("memory_ids", []) if m != memory_id]
-            self.scope_path.parent.mkdir(parents=True, exist_ok=True)
-            self.scope_path.write_text(
-                json.dumps({"library_id": library_id, "memory_ids": remaining}, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+        canonical = self.library_root / library_id / "memories" / f"{memory_id}.md"
+        with file_lock(canonical, self.index_path.parent / "locks"):
+            block = self._library_block(library_id, memory_id)
+            if expected_digest is not None and block.digest != expected_digest:
+                raise ConflictError("record changed; reload before deleting")
+            target = Path(block.path)
+            # Validate scope before touching the record; keep a recoverable copy.
+            with file_lock(self.scope_path, self.index_path.parent / "locks"):
+                scope = self._scope()
+                self._backup(target, library_id, memory_id)
+                if scope["library_id"] == library_id and memory_id in scope["memory_ids"]:
+                    remaining = [item for item in scope["memory_ids"] if item != memory_id]
+                    atomic_write(self.scope_path, json.dumps(
+                        {"library_id": library_id, "memory_ids": remaining}, ensure_ascii=False, indent=2,
+                    ) + "\n")
+                target.unlink()
         return True
 
     def create_library(self, library_id: str, name: str, description: str = "") -> dict[str, object]:
@@ -341,8 +456,7 @@ class MemoryStore:
         description = description.strip()
 
         if not library_id or not library_id.strip():
-            import time
-            library_id = f"novel_{int(time.time())}"
+            library_id = f"novel_{uuid.uuid4().hex[:16]}"
         elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
             raise ValueError("invalid library_id: must use alphanumeric, dash or underscore")
 
@@ -358,9 +472,8 @@ class MemoryStore:
             "name": name,
             "description": description,
         }
-        (library_dir / "library.json").write_text(
+        atomic_write(library_dir / "library.json",
             json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         return {
             "library_id": library_id,
@@ -390,9 +503,8 @@ class MemoryStore:
         metadata["library_id"] = library_id
         metadata["name"] = name
         metadata["description"] = description
-        metadata_path.write_text(
+        atomic_write(metadata_path,
             json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
         )
         memory_dir = library_dir / "memories"
         count = len(list(memory_dir.rglob("*.md"))) if memory_dir.is_dir() else 0
@@ -404,82 +516,112 @@ class MemoryStore:
         }
 
     def _scope(self) -> dict[str, object]:
-        if not self.scope_path.is_file():
-            return {"library_id": "", "memory_ids": []}
         try:
-            value = json.loads(self.scope_path.read_text(encoding="utf-8"))
-            return value if isinstance(value, dict) else {"library_id": "", "memory_ids": []}
-        except (OSError, json.JSONDecodeError):
+            text = self.scope_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+        except FileNotFoundError:
             return {"library_id": "", "memory_ids": []}
+        except (OSError, UnicodeError) as exc:
+            raise ScopeError("active scope cannot be read; repair it in the management console") from exc
+        try:
+            value = json.loads(text)
+            if not isinstance(value, dict):
+                raise TypeError("scope must be an object")
+            library_id = value.get("library_id", "")
+            ids = value.get("memory_ids", [])
+            if not isinstance(library_id, str) or (library_id and not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id,
+            )):
+                raise ValueError("invalid library_id")
+            if not isinstance(ids, list) or any(
+                not isinstance(item, str) or not MEMORY_ID_RE.fullmatch(item) for item in ids
+            ) or (not library_id and ids):
+                raise ValueError("invalid memory_ids")
+            return {"library_id": library_id, "memory_ids": list(dict.fromkeys(ids))}
+        except (ValueError, TypeError) as exc:
+            raise ScopeError("active scope is invalid; select and save a valid scope in the management console") from exc
 
     def active_scope(self) -> dict[str, object]:
-        scope = self._scope()
-        library_id = str(scope.get("library_id", ""))
-        ids = scope.get("memory_ids", [])
-        return {"library_id": library_id, "memory_ids": [str(item) for item in ids] if isinstance(ids, list) else []}
+        return self._scope()
 
     def set_scope(self, library_id: str, memory_ids: list[str]) -> dict[str, object]:
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
+        if not isinstance(library_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", library_id):
             raise ValueError("invalid library_id")
+        if not isinstance(memory_ids, list) or any(not isinstance(item, str) for item in memory_ids):
+            raise ValueError("memory_ids must be a list of strings")
         library_dir = self.library_root / library_id
         memory_dir = library_dir / "memories"
         if not memory_dir.is_dir():
             raise ValueError(f"library not found: {library_id}")
-        available = {block.memory_id for path in memory_dir.rglob("*.md") if (block := self._read_block(path)) is not None}
+        blocks, _ = self._scan_directory(memory_dir)
+        available = {block.memory_id for block in blocks}
         if not set(memory_ids).issubset(available):
             raise ValueError("scope contains an unknown memory_id")
         value = {"library_id": library_id, "memory_ids": list(dict.fromkeys(memory_ids))}
-        self.scope_path.parent.mkdir(parents=True, exist_ok=True)
-        self.scope_path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        with file_lock(self.scope_path, self.index_path.parent / "locks"):
+            atomic_write(self.scope_path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
         return value
 
-    def _active_memory_dir(self) -> Path:
-        scope = self.active_scope()
+    def _active_memory_dir(self, scope: dict[str, object] | None = None) -> Path:
+        scope = self.active_scope() if scope is None else scope
         library_id = str(scope.get("library_id", ""))
         if library_id:
             directory = self.library_root / library_id / "memories"
             if not directory.is_dir():
-                raise RuntimeError(f"active library does not exist: {library_id}")
+                raise ScopeError(f"active library does not exist: {library_id}")
             return directory
         return self.memory_dir
 
-    def _sync(self, connection: sqlite3.Connection) -> None:
-        blocks = self._scan()
+    @contextmanager
+    def _indexed_snapshot(self) -> Iterator[tuple[sqlite3.Connection, dict[str, object]]]:
+        scope = self.active_scope()
+        connection = self._connect()
+        try:
+            # The shared rebuildable index must not change between sync and read.
+            connection.execute("BEGIN IMMEDIATE")
+            self._sync(connection, scope)
+            yield connection, scope
+            connection.commit()
+        finally:
+            connection.close()
+
+    def _sync(self, connection: sqlite3.Connection, scope: dict[str, object]) -> None:
+        blocks = self._scan(scope)
         current = {block.memory_id: block for block in blocks}
         existing = {
-            row["memory_id"]: row["digest"]
-            for row in connection.execute("SELECT memory_id, digest FROM memories")
+            row["memory_id"]: (row["digest"], row["path"])
+            for row in connection.execute("SELECT memory_id, digest, path FROM memories")
         }
-        with connection:
-            for memory_id in set(existing) - set(current):
-                connection.execute("DELETE FROM memories WHERE memory_id = ?", (memory_id,))
-                connection.execute("DELETE FROM memory_fts WHERE memory_id = ?", (memory_id,))
-            for block in blocks:
-                if existing.get(block.memory_id) == block.digest:
-                    continue
-                connection.execute("DELETE FROM memory_fts WHERE memory_id = ?", (block.memory_id,))
-                connection.execute(
-                    """
-                    INSERT INTO memories(memory_id, path, date_range, title, tags, content, digest)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(memory_id) DO UPDATE SET
-                        path=excluded.path, date_range=excluded.date_range, title=excluded.title,
-                        tags=excluded.tags, content=excluded.content, digest=excluded.digest
-                    """,
-                    (
-                        block.memory_id,
-                        block.path,
-                        block.date_range,
-                        block.title,
-                        block.tags,
-                        block.content,
-                        block.digest,
-                    ),
-                )
-                connection.execute(
-                    "INSERT INTO memory_fts(memory_id, title, tags, content) VALUES (?, ?, ?, ?)",
-                    (block.memory_id, block.title, block.tags, block.content),
-                )
+        for memory_id, old_identity in existing.items():
+            if memory_id in current and old_identity == (current[memory_id].digest, current[memory_id].path):
+                continue
+            connection.execute("DELETE FROM memories WHERE memory_id = ?", (memory_id,))
+            connection.execute("DELETE FROM memory_fts WHERE memory_id = ?", (memory_id,))
+        for block in blocks:
+            if existing.get(block.memory_id) == (block.digest, block.path):
+                continue
+            connection.execute("DELETE FROM memory_fts WHERE memory_id = ?", (block.memory_id,))
+            connection.execute(
+                """
+                INSERT INTO memories(memory_id, path, date_range, title, tags, content, digest)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(memory_id) DO UPDATE SET
+                    path=excluded.path, date_range=excluded.date_range, title=excluded.title,
+                    tags=excluded.tags, content=excluded.content, digest=excluded.digest
+                """,
+                (
+                    block.memory_id,
+                    block.path,
+                    block.date_range,
+                    block.title,
+                    block.tags,
+                    block.content,
+                    block.digest,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO memory_fts(memory_id, title, tags, content) VALUES (?, ?, ?, ?)",
+                (block.memory_id, block.title, block.tags, block.content),
+            )
 
     @staticmethod
     def _query_terms(query: str) -> list[str]:
@@ -524,9 +666,7 @@ class MemoryStore:
         return matched_terms * 20 + score, matched_terms
 
     def search(self, query: str, limit: int) -> list[dict[str, str]]:
-        connection = self._connect()
-        try:
-            self._sync(connection)
+        with self._indexed_snapshot() as (connection, scope):
             terms = self._query_terms(query)
             if not terms:
                 return []
@@ -545,7 +685,6 @@ class MemoryStore:
             rows = connection.execute(
                 "SELECT memory_id, date_range, title, tags, content FROM memories"
             ).fetchall()
-            scope = self.active_scope()
             active_ids = set(scope.get("memory_ids", []))
             if scope.get("library_id"):
                 rows = [row for row in rows if row["memory_id"] in active_ids]
@@ -565,18 +704,13 @@ class MemoryStore:
                 }
                 for _, _, _, row in ranked[:limit]
             ]
-        finally:
-            connection.close()
 
     def list_tags(self) -> list[dict[str, str | list[str]]]:
         """Return compact discovery metadata for every maintained memory block."""
-        connection = self._connect()
-        try:
-            self._sync(connection)
+        with self._indexed_snapshot() as (connection, scope):
             rows = connection.execute(
                 "SELECT memory_id, date_range, title, tags FROM memories ORDER BY memory_id"
             ).fetchall()
-            scope = self.active_scope()
             active_ids = set(scope.get("memory_ids", []))
             if scope.get("library_id"):
                 rows = [row for row in rows if row["memory_id"] in active_ids]
@@ -589,26 +723,19 @@ class MemoryStore:
                 }
                 for row in rows
             ]
-        finally:
-            connection.close()
 
     def get(self, memory_id: str) -> dict[str, str]:
         if not MEMORY_ID_RE.fullmatch(memory_id):
             raise ValueError("memory_id must contain only letters, digits, underscores, or hyphens")
-        connection = self._connect()
-        try:
-            self._sync(connection)
+        with self._indexed_snapshot() as (connection, scope):
             row = connection.execute(
                 "SELECT memory_id, date_range, title, content FROM memories WHERE memory_id = ?",
                 (memory_id,),
             ).fetchone()
-            scope = self.active_scope()
             active_ids = set(scope.get("memory_ids", []))
             if row is None or (scope.get("library_id") and memory_id not in active_ids):
                 raise ValueError(f"memory_id not found: {memory_id}")
             return dict(row)
-        finally:
-            connection.close()
 
     def get_many(self, memory_ids: list[str]) -> list[dict[str, str]]:
         """Return selected complete memory blocks in the requested order."""
@@ -622,17 +749,15 @@ class MemoryStore:
             if not MEMORY_ID_RE.fullmatch(memory_id):
                 raise ValueError("memory_id must contain only letters, digits, underscores, or hyphens")
 
-        connection = self._connect()
-        try:
-            self._sync(connection)
-            placeholders = ", ".join("?" for _ in memory_ids)
-            rows = connection.execute(
-                f"SELECT memory_id, date_range, title, content FROM memories "
-                f"WHERE memory_id IN ({placeholders})",
-                memory_ids,
-            ).fetchall()
+        with self._indexed_snapshot() as (connection, scope):
+            # The public operation accepts exactly one or two IDs.
+            statement = (
+                "SELECT memory_id, date_range, title, content FROM memories WHERE memory_id = ?"
+                if len(memory_ids) == 1 else
+                "SELECT memory_id, date_range, title, content FROM memories WHERE memory_id IN (?, ?)"
+            )
+            rows = connection.execute(statement, memory_ids).fetchall()
             found = {row["memory_id"]: dict(row) for row in rows}
-            scope = self.active_scope()
             active_ids = set(scope.get("memory_ids", []))
             if scope.get("library_id"):
                 found = {memory_id: item for memory_id, item in found.items() if memory_id in active_ids}
@@ -640,5 +765,3 @@ class MemoryStore:
             if missing is not None:
                 raise ValueError(f"memory_id not found: {missing}")
             return [found[memory_id] for memory_id in memory_ids]
-        finally:
-            connection.close()

@@ -60,6 +60,12 @@ flowchart LR
 
 服务不会自动总结、重写或拆分正文，也不会在普通聊天中自动加载全部历史。AI 的检索效果仍取决于记忆内容、标签质量和客户端是否调用工具。
 
+## v0.1.1 更新
+
+这次更新重点是保护已整理好的内容：不同中文文件名可分别导入，重复导入会提示冲突；编辑和删除前会保留历史备份，多个页面同时编辑时会检查版本，避免旧页面覆盖新内容。管理密码现在支持中文，挂载配置损坏时会停止开放资料并提示修复。
+
+网页会分别显示待保存的勾选和实际已挂载范围。已有用户更新代码和依赖后，请重启两个服务并刷新页面；原有 Markdown、密码和挂载配置可以继续使用。详见 [更新日志](CHANGELOG.md) 和 [升级说明](docs/QUICKSTART.md#升级已有安装)。
+
 ## 快速开始
 
 需要 **Python 3.10+**，首次安装依赖需要联网。可以克隆仓库，或从 [Releases](https://github.com/syydmtl/novel-memory-mcp/releases) 下载源码包。
@@ -75,7 +81,7 @@ cd novel-memory-mcp
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install -e "."
+.venv\Scripts\python.exe -m pip install -e "." -c security-constraints.txt
 .venv\Scripts\python.exe run.py setup
 .venv\Scripts\python.exe run.py check
 ```
@@ -84,7 +90,7 @@ python -m venv .venv
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e "."
+.venv/bin/python -m pip install -e "." -c security-constraints.txt
 .venv/bin/python run.py setup
 .venv/bin/python run.py check
 ```

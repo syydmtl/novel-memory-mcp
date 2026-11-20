@@ -14,18 +14,18 @@ PATH_DEFAULTS = {
     "NOVEL_MEMORY_INDEX_PATH": "state/novel_memory_index.sqlite3",
     "NOVEL_MEMORY_SCOPE_PATH": "state/active_scope.json",
     "NOVEL_MEMORY_WEB_DIR": "web",
-    "NOVEL_MEMORY_ADMIN_TOKEN_PATH": "state/admin_token.txt",
+    "NOVEL_MEMORY_ADMIN_TOKEN_PATH": "state/admin_token.txt",  # nosec B105 - File path.
 }
 VALUE_DEFAULTS = {
     "NOVEL_MEMORY_RUN_MODE": "http",
     "NOVEL_MEMORY_HOST": "127.0.0.1",
     "NOVEL_MEMORY_PORT": "8766",
-    "NOVEL_MEMORY_TOKEN": "",
+    "NOVEL_MEMORY_TOKEN": "",  # nosec B105 - Setup generates a random credential.
     "NOVEL_MEMORY_ALLOWED_HOSTS": "127.0.0.1:8766,localhost:8766",
     "NOVEL_MEMORY_ALLOWED_ORIGINS": "http://127.0.0.1:8766,http://localhost:8766",
     "NOVEL_MEMORY_ADMIN_HOST": "127.0.0.1",
     "NOVEL_MEMORY_ADMIN_PORT": "8767",
-    "NOVEL_MEMORY_ADMIN_TOKEN": "",
+    "NOVEL_MEMORY_ADMIN_TOKEN": "",  # nosec B105 - Setup generates a random credential.
 }
 
 
@@ -92,7 +92,8 @@ def check() -> None:
     if tags:
         memory_id = str(tags[0]["memory_id"])
         block = store.get(memory_id)
-        assert block["content"]
+        if not block["content"]:
+            raise SystemExit("Read check failed: empty memory content")
         print(f"Read OK: {memory_id}")
 
 

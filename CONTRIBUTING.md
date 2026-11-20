@@ -18,7 +18,7 @@ python -m venv .venv
 Windows 使用 `.venvScriptspython.exe`，macOS / Linux 使用 `.venv/bin/python`：
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev]" -c security-constraints.txt
 python -m pytest
 python -m ruff check .
 ```

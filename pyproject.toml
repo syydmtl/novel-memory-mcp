@@ -4,13 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novel-memory-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Curated story memory for RikkaHub and MCP clients with a self-hosted web console"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "mcp>=1.20.0,<2",
+  "mcp>=1.30.0,<2",
   "uvicorn>=0.30.0,<1",
+  "certifi>=2026.10.19",
+  "PyJWT>=2.15.0",
 ]
 
 [project.urls]

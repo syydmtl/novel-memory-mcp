@@ -175,6 +175,7 @@ def test_admin_api_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     res = client.get("/api/libraries/api_novel/memories/stage_1", headers=auth_headers)
     assert res.status_code == 200
     assert res.json()["content"] == "一切的开端正文。"
+    initial_digest = res.json()["digest"]
 
     # Update memory via API
     res = client.put(
@@ -185,13 +186,18 @@ def test_admin_api_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
             "title": "起点修订",
             "tags": ["序曲", "新标签"],
             "content": "修改后的正文内容。",
+            "expected_digest": initial_digest,
         },
     )
     assert res.status_code == 200
     assert res.json()["title"] == "起点修订"
+    updated_digest = res.json()["digest"]
 
     # Delete memory via API
-    res = client.delete("/api/libraries/api_novel/memories/stage_1", headers=auth_headers)
+    res = client.request(
+        "DELETE", "/api/libraries/api_novel/memories/stage_1", headers=auth_headers,
+        json={"expected_digest": updated_digest},
+    )
     assert res.status_code == 200
     assert res.json()["ok"] is True
 

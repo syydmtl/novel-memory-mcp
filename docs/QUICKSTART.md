@@ -26,7 +26,7 @@ Python 3.10 或更新版本，SQLite 支持 FTS5。首次安装依赖需要联�
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install -e "."
+.venv\Scripts\python.exe -m pip install -e "." -c security-constraints.txt
 .venv\Scripts\python.exe run.py setup
 .venv\Scripts\python.exe run.py check
 ```
@@ -54,7 +54,7 @@ python -m venv .venv
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e "."
+.venv/bin/python -m pip install -e "." -c security-constraints.txt
 .venv/bin/python run.py setup
 .venv/bin/python run.py check
 ```
@@ -120,7 +120,7 @@ Authorization: Bearer <本机 .env 中 NOVEL_MEMORY_TOKEN 的值>
 ## 开发与检查
 
 ```powershell
-.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.venv\Scripts\python.exe -m pip install -e ".[dev]" -c security-constraints.txt
 .venv\Scripts\python.exe -m pytest
 .venv\Scripts\python.exe -m ruff check .
 .venv\Scripts\python.exe test_tools.py
@@ -141,3 +141,20 @@ Authorization: Bearer <本机 .env 中 NOVEL_MEMORY_TOKEN 的值>
 自行使用后再次分享时，请排除 `.env`、`state/`、`.venv/`、缓存、日志和自己的小说正文。`.gitignore` 只影响 Git，不会替你过滤手动压缩的文件。
 
 源码采用 MIT 许可证，见 `LICENSE`。
+
+## 升级已有安装
+
+升级前先备份自己的 `.env`、`libraries/`、`memories/` 和 `state/`。停止管理网页和 MCP 服务，更新代码，然后在原虚拟环境中执行：
+
+```bash
+python -m pip install -e "." -c security-constraints.txt
+python run.py check
+```
+
+这里的 `python` 应使用原安装目录虚拟环境中的 Python。重新启动 `run.py admin`、`run.py mcp`，并刷新已打开的浏览器标签页。升级时不需要再次执行 `setup`，也不要用演示文件覆盖自己的作品。
+
+v0.1.1 保留现有 Markdown、密码和挂载配置；首次查询可以重建 SQLite 索引。编辑和删除会先将旧文件保存到索引同级目录的 `history/<library_id>/<memory_id>/`，默认配置即 `state/history/`。这些历史版本同样包含作品内容，应和正文一起备份并避免公开。
+
+如果自行编写了管理 API 客户端，请先 GET 对应记录，再将返回的 `digest` 作为 `expected_digest` 传入 PUT、DELETE 或显式覆盖导入。缺少该字段返回 428，版本已变化返回 409，应重新读取后让操作者确认。MCP 的四个只读工具名称和参数保持不变。
+
+反向代理部署管理网页时，请在可信代理中转发 `X-Forwarded-Proto`，并限制应用只信任该代理；通过 HTTPS 登录后应确认会话 Cookie 带有 Secure 属性。
